@@ -22,3 +22,9 @@ htmlcov/
 
 # Runtime data
 /data/
+
+# graft's local graph cache — regenerable, not committed (run `graft build`).
+graft/
+
+# Third-party design reference images (local use only, not for publication)
+/docs/ui/references/

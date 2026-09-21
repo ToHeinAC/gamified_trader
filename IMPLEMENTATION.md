@@ -18,7 +18,15 @@ One row per PRD milestone. Status: `planned`, `in progress`, `done`.
 | Phase | Milestone | Status | Verified by |
 |---|---|---|---|
 | 0 | Blueprint skeleton (no PRD milestone) | done | full gate green |
-| 1 | M1: {from PRD.md} | planned | {tests that prove the acceptance criteria} |
+| 1 | M1: Kursdaten und Universum | planned | acceptance tests M1 |
+| 2 | M2: Indikatoren, Chart und App-Grundgerüst | planned | acceptance tests M2 |
+| 3 | M3: Handelsvorschläge, Simulation und Bewertung | planned | acceptance tests M3 |
+| 4 | M4: Snapshot-Pool (50.000) | planned | acceptance tests M4 |
+| 5 | M5: Persistenz und Setup-Modus | planned | acceptance tests M5 |
+| 6 | M6: Spielmodus | planned | acceptance tests M6 |
+| 7 | M7: Features und ML-Modell (preliminary) | planned | after PRD iteration |
+| 8 | M8: Entdeckungsmodus (preliminary) | planned | after PRD iteration |
+| 9 | M9: Lernmodus (preliminary) | planned | after PRD iteration |
 
 ## 3. Module map
 
@@ -33,4 +41,5 @@ One row per PRD milestone. Status: `planned`, `in progress`, `done`.
 
 ## 4. Open issues
 
-- None.
+- [PRD.md](PRD.md) v0.2: grill-me settled A1–A18 (Release 1 is ready to implement). A19 and A20
+  stay open and must be settled in a separate PRD iteration before M7 starts.
