@@ -1,11 +1,12 @@
 """`gt` command-line entry point."""
 
 import argparse
+import os
 import time
 from collections.abc import Sequence
 
 from app import data_sync, yahoo
-from app.config import load_config
+from app.config import Config, load_config
 from app.price_store import PriceStore
 from app.universe import load_universe
 
@@ -43,6 +44,20 @@ def _data_update(_args: argparse.Namespace) -> int:
     return report.exit_code()
 
 
+def _cmd_app(cfg: Config) -> int:
+    storage = cfg.data_dir / "nicegui"
+    storage.mkdir(parents=True, exist_ok=True)  # NiceGUI's own mkdir has no parents=True
+    os.environ.setdefault("NICEGUI_STORAGE_PATH", str(storage))
+    from app.ui.root import run_app  # lazy: NiceGUI reads NICEGUI_STORAGE_PATH at import time
+
+    run_app(cfg)
+    return 0
+
+
+def _app(_args: argparse.Namespace) -> int:
+    return _cmd_app(load_config())
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="gt")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -56,6 +71,9 @@ def _build_parser() -> argparse.ArgumentParser:
 
     update_parser = data_subparsers.add_parser("update", help="Neue Tage nachladen")
     update_parser.set_defaults(func=_data_update)
+
+    app_parser = subparsers.add_parser("app", help="Web-App starten")
+    app_parser.set_defaults(func=_app)
 
     return parser
 

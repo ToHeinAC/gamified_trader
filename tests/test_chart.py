@@ -1,0 +1,125 @@
+import json
+import re
+
+import numpy as np
+import pytest
+
+from app.chart import (
+    PRESETS,
+    START_PRESET,
+    TRACE_NAMES,
+    apply_preset,
+    build_figure,
+    decision_window,
+)
+from app.indicators import with_indicators
+from app.theme import DARK, LIGHT
+from tests.helpers import make_bars, random_walk_bars
+
+
+def _window(n: int, t0_idx: int | None = None, seed: int = 0):
+    bars = random_walk_bars(n, seed)
+    indexed = with_indicators(bars)
+    return decision_window(indexed, n - 1 if t0_idx is None else t0_idx)
+
+
+def _trace(fig, name: str) -> dict:
+    return next(t for t in fig.to_dict()["data"] if t["name"] == name)
+
+
+def test_structure() -> None:
+    window = _window(400)
+    fig = build_figure(window, LIGHT)
+    d = fig.to_dict()
+    names = [t["name"] for t in d["data"]]
+    assert names == list(TRACE_NAMES)
+    assert "yaxis3" in d["layout"]
+    assert "yaxis4" not in d["layout"]
+    assert d["layout"]["yaxis"]["side"] == "right"
+    assert tuple(d["layout"]["yaxis3"]["range"]) == (0, 100)
+    kurs = _trace(fig, "Kurs")
+    assert list(kurs["x"])[-1] == 0
+
+
+def test_window_length() -> None:
+    window_long = _window(1500)
+    assert len(window_long) == 1260
+
+    window_short = _window(300)
+    assert len(window_short) == 300
+
+
+def test_sma200_from_first_visible() -> None:
+    window = _window(1500)
+    assert window["sma200"].notna().all()
+
+
+def test_short_history() -> None:
+    window = _window(300)
+    assert window["sma200"].iloc[:199].isna().all()
+    fig = build_figure(window, LIGHT)
+    sma200 = _trace(fig, "SMA200")
+    assert np.isnan(np.asarray(sma200["y"], dtype=float)).any()
+
+
+def test_no_leak() -> None:
+    window = _window(400)
+    fig = build_figure(window, LIGHT)
+    fig_json = fig.to_json(engine="json")
+    assert fig_json is not None
+    assert not re.search(r"\d{4}-\d{2}-\d{2}", fig_json)
+    assert "date" not in window.columns
+
+
+def test_presets() -> None:
+    window = _window(400)
+    fig = build_figure(window, LIGHT)
+    for preset, n_preset in PRESETS.items():
+        apply_preset(fig, window, preset)
+        n = min(n_preset, len(window))
+        layout = fig.to_dict()["layout"]
+        assert tuple(layout["xaxis"]["range"]) == pytest.approx((-n + 0.5, 0.5))
+        vis = window.tail(n)
+        lo = np.nanmin(np.minimum(vis["low"], vis["bb_lower"]))
+        hi = np.nanmax(np.maximum(vis["high"], vis["bb_upper"]))
+        assert tuple(layout["yaxis"]["range"]) == pytest.approx((lo * 0.97, hi * 1.03))
+
+    fig2 = build_figure(window, LIGHT)
+    n = min(PRESETS[START_PRESET], len(window))
+    assert tuple(fig2.to_dict()["layout"]["xaxis"]["range"]) == pytest.approx((-n + 0.5, 0.5))
+
+
+def test_theme_colours() -> None:
+    window = _window(400)
+    fig_light = build_figure(window, LIGHT)
+    assert fig_light.to_dict()["layout"]["paper_bgcolor"] == LIGHT.surface
+    kurs_light = _trace(fig_light, "Kurs")
+    assert kurs_light["increasing"]["line"]["color"] == "#22B35E"
+
+    fig_dark = build_figure(window, DARK)
+    assert fig_dark.to_dict()["layout"]["paper_bgcolor"] == DARK.surface
+
+
+def test_volume_colours() -> None:
+    window = _window(400)
+    fig = build_figure(window, LIGHT)
+    volume = _trace(fig, "Volumen")
+    falling_idx = next(
+        i for i in range(len(window)) if window["close"].iloc[i] < window["open"].iloc[i]
+    )
+    assert list(volume["marker"]["color"])[falling_idx] == LIGHT.down
+
+
+def test_constant_prices_and_zero_volume_builds() -> None:
+    bars = make_bars([10.0] * 300, volume=0)
+    indexed = with_indicators(bars)
+    window = decision_window(indexed, 299)
+    build_figure(window, LIGHT)
+
+
+def test_window_json_serializable() -> None:
+    window = _window(300)
+    fig = build_figure(window, LIGHT)
+    fig_json = fig.to_json()
+    assert fig_json is not None
+    json.loads(fig_json)

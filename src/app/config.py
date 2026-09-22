@@ -10,6 +10,7 @@ from pathlib import Path
 class Config:
     data_dir: Path
     yahoo_pause_s: float
+    port: int
 
     @property
     def prices_dir(self) -> Path:
@@ -21,4 +22,5 @@ def load_config(env: Mapping[str, str] | None = None) -> Config:
     return Config(
         data_dir=Path(source.get("GT_DATA_DIR", "data")),
         yahoo_pause_s=float(source.get("GT_YAHOO_PAUSE_S", "2.0")),
+        port=int(source.get("GT_PORT", "8537")),
     )

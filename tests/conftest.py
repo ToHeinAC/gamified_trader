@@ -4,6 +4,8 @@ import socket
 
 import pytest
 
+pytest_plugins = ["nicegui.testing.user_plugin"]
+
 
 @pytest.fixture(autouse=True)
 def _block_network(monkeypatch: pytest.MonkeyPatch) -> None:
