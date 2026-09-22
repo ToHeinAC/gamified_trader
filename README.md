@@ -20,7 +20,7 @@ Requirements: [uv](https://docs.astral.sh/uv/) and git. uv installs Python itsel
 uv run gt data download                 # full universe (src/app/resources/universe.csv)
 uv run gt data download --tickers AAPL  # a subset
 uv run gt data update                   # append new days, reload on split/dividend re-adjustment
-uv run gt app                           # web app: random chart, light/dark, "App beenden"
+uv run gt app                           # web app: random chart, Setup page (users, settings)
 uv run gt snapshots build               # 50,000-snapshot pool (data/snapshots.parquet/.json)
 ```
 

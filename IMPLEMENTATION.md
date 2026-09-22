@@ -25,7 +25,7 @@ Release 1: start with [docs/spec-common.md](docs/spec-common.md), then the miles
 | 2 | M2: Indikatoren, Chart und App-Grundgerüst | done | acceptance tests M2, full gate green | [M2](docs/spec-m2-chart-app.md) |
 | 3 | M3: Handelsvorschläge, Simulation und Bewertung | done | acceptance tests M3, full gate green | [M3](docs/spec-m3-trading.md) |
 | 4 | M4: Snapshot-Pool (50.000) | done | acceptance tests M4, full gate green | [M4](docs/spec-m4-pool.md) |
-| 5 | M5: Persistenz und Setup-Modus | planned | acceptance tests M5 | [M5](docs/spec-m5-setup.md) |
+| 5 | M5: Persistenz und Setup-Modus | done | acceptance tests M5, full gate green | [M5](docs/spec-m5-setup.md) |
 | 6 | M6: Spielmodus | planned | acceptance tests M6 | [M6](docs/spec-m6-game.md) |
 | 7 | M7: Features und ML-Modell (preliminary) | planned | after PRD iteration | — |
 | 8 | M8: Entdeckungsmodus (preliminary) | planned | after PRD iteration | — |
@@ -53,6 +53,11 @@ Release 1: start with [docs/spec-common.md](docs/spec-common.md), then the miles
 | `src/app/eligibility.py` | `eligible_mask`: R10 candidate mask per bar. |
 | `src/app/pool.py` | `ticker_candidates`, `select`, `build_pool`: deterministic snapshot selection and rows. See [docs/pool.md](docs/pool.md). |
 | `src/app/pool_store.py` | `write_pool`/`read_pool`/`read_meta`: `snapshots.parquet` + `snapshots.json`. |
+| `src/app/settings_rules.py` | Pure validation for the Setup form (names, capital, leverage, rates). |
+| `src/app/fmt.py` | German number/money/date formatting for the UI. |
+| `src/app/db.py` | `Database`: SQLite users/settings/resets/active-user (`data/app.db`). |
+| `src/app/ui/context.py` | `PageContext`: per-client `Config`/`Database`/theme/user name shared by pages. |
+| `src/app/ui/setup.py` | Page "Setup": create/select users, edit settings, reset balance. |
 | `src/app/cli.py` | `gt` entry point: `data download`, `data update`, `app`, `snapshots build`. |
 | `tests/helpers.py` | Synthetic OHLCV factories (`make_bars`, `random_walk_bars`, `write_store`). |
 | `tests/conftest.py` | Shared fixtures; blocks network access in all tests. |
@@ -89,3 +94,10 @@ Release 1: start with [docs/spec-common.md](docs/spec-common.md), then the miles
   2's target as `N - <actual signal count>` instead (dynamic), matching D6's stated intent that a
   signal shortage should be made up by *more* non-signal days, not a smaller pool. Documented in
   [docs/pool.md](docs/pool.md#selection-poolpy).
+- M5 (2026-09-22): implemented exactly per spec, no deviations. Manual check: `uv run gt app`
+  served "/" (shows "Noch kein Nutzer angelegt." with no user) and "/setup" (shows "Neuer Nutzer")
+  correctly; stopped via its own shutdown (SIGTERM to its own PID), not a port-kill. Automated
+  `test_ui_setup.py` covers user creation, settings validation/save, and the reset-confirmation
+  dialog. Two elements needed distinct `.mark(...)` markers ("cancel-reset"/"confirm-reset") beyond
+  what the spec's UI table names, because NiceGUI's `find()` text search is substring-based and
+  "Guthaben zurücksetzen" and "Zurücksetzen" would otherwise collide.

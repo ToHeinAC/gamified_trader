@@ -114,6 +114,38 @@ ambiguous for `cumsum`, `where`, `flatnonzero`, `concatenate` and `permutation` 
 NiceGUI/plotly stub gaps. Schema, selection algorithm and the manual full-build results:
 [docs/pool.md](pool.md).
 
+## M5 persistence and setup
+
+```
+gt app -> cli.py -> ui/root.py: root(), db.init(), PageContext
+                          |                    \
+                    ui/setup.py           ui/play.py (hint if ctx.active_user() is None)
+                    (SetupView.render())        |
+                          |                ui/chart_panel.py (now takes ctx, uses ctx.dark)
+                    settings_rules.py (pure validation)
+                          |
+                       db.py (SQLite: users, resets, app_state)
+```
+
+`Database.__init__` does no disk I/O; `db.init()` (called once from `root()`) creates `data/app.db`'s
+three tables if missing and sets `PRAGMA user_version`. Every other `Database` method opens and
+closes its own connection (`contextlib.closing`, `row_factory = sqlite3.Row`, `PRAGMA foreign_keys
+= ON`), which is simple and fast enough for the single-user case. Validation happens twice by
+design: `settings_rules.py` produces the German UI error messages, and the table's own `CHECK`
+constraints are the last line of defense (e.g. `balance_cents >= 0`).
+
+```sql
+users (id, name, name_key UNIQUE, start_capital_cents, balance_cents, lev_mid, lev_pro,
+       interest_tenths, fee_tenths, created_at)
+resets (id, user_id, at, balance_before_cents)
+app_state (key PRIMARY KEY, value)   -- holds 'active_user_id'
+```
+
+`PageContext` (`ui/context.py`) is a non-frozen dataclass (needed for NiceGUI's
+`bind_text_from(ctx, "user_name")`, which requires a plain mutable attribute) carrying `cfg`, `db`,
+`dark` and the header's `user_name`. `chart_panel` and `play_page` take `ctx` instead of `dark`
+directly, so M6 can extend them without changing their signatures again.
+
 ## Known limits
 
 - `pre-commit run --all-files` checks only files git tracks. New untracked files are formatted by
