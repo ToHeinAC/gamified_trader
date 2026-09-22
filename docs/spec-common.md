@@ -11,9 +11,8 @@ report it. If a spec is silent, choose the simplest option and name it in the su
 
 ## 1. Decisions beyond the PRD
 
-The PRD leaves these open. The specs follow the decision in the right-hand column. Items marked
-**user** need the user's approval before they are implemented; until then implement the PRD
-behavior only.
+The PRD leaves these open. The specs follow the decision in the right-hand column. D13 goes beyond
+the PRD and was approved by the user on 2026-09-22.
 
 | ID | Topic | Decision |
 |---|---|---|
@@ -29,7 +28,7 @@ behavior only.
 | D10 | Theme default | Stored value `None` means "follow the system". On first page load, JavaScript asks the browser for the system scheme and the answer is stored. After that the stored choice wins. |
 | D11 | Theme storage | `nicegui_app.storage.general["dark_mode"]` (server-side JSON file under `GT_DATA_DIR/nicegui`). No storage secret is needed. |
 | D12 | Property tests | Seeded `numpy.random.default_rng` loops, no Hypothesis: Hypothesis is MPL-2.0, which AGENTS.md §5.5 doesn't list. |
-| D13 | `gt data update` after a split or dividend | **user**: with `auto_adjust=True`, Yahoo re-adjusts old prices, so appended rows can sit on a different adjustment basis than the stored history. Proposal: fetch from the last stored date inclusive; if its close differs by > 0.5 %, reload the full history of that ticker. Not in the PRD, so don't build it until approved. |
+| D13 | `gt data update` after a split or dividend | Approved 2026-09-22. With `auto_adjust=True`, Yahoo re-adjusts old prices, so appended rows could sit on a different adjustment basis than the stored history. `update` fetches from the last stored date inclusive; if that day's close changed by more than 0.5 %, it reloads the ticker's full history. Details: [M1 §2.4](spec-m1-data.md). |
 
 ## 2. Dependencies
 

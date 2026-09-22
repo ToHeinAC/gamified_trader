@@ -105,6 +105,7 @@ SleepFn = Callable[[float], None]
 BATCH_SIZE = 50
 RETRIES = 3
 BASE_DELAY_S = 2.0
+READJUST_TOLERANCE = 0.005   # D13: relative change of the last stored close that forces a reload
 
 class EmptyBatchError(RuntimeError): ...
 
@@ -118,6 +119,7 @@ class SyncReport:
     succeeded: list[str] = field(default_factory=list)
     failed: dict[str, str] = field(default_factory=dict)   # ticker -> reason
     skipped: list[str] = field(default_factory=list)
+    reloaded: list[str] = field(default_factory=list)      # update only: full reload (D13)
     rows: int = 0
     corrections: int = 0
     dropped: int = 0                            # dropped_invalid + dropped_duplicates
@@ -142,15 +144,31 @@ def update(store: PriceStore, fetch: FetchFn, sleep: SleepFn,
    write, add it to `succeeded`, and add rows, corrections and dropped to the totals.
 4. `sleep(pause_s)` between batches (not after the last one).
 
-**update**
+**update** (includes D13, approved by the user on 2026-09-22. It extends the PRD M1 criterion "update
+lädt nur Tage nach dem letzten gespeicherten Datum": the last stored day is fetched again as a check.
+This is not a spec–PRD conflict.)
 
-1. Tickers = `store.tickers()`. Per batch: `start = min(last_date) + 1 day`;
-   `frames = call_with_retry(lambda: fetch(batch, start), sleep)`, with no empty check, because
-   "no new day" is normal.
-2. Per ticker: clean the new frame, keep rows with `date > last_date(ticker)`, append them to the
-   stored frame, write. A missing or empty frame is a success with 0 rows. A batch exception after
-   retries → the batch's tickers fail.
-3. Pause between batches as in download.
+1. Tickers = `store.tickers()`. Per batch: `start = min(last_date)`, **inclusive**, so the last
+   stored day comes back as the overlap row. `frames = call_with_retry(lambda: fetch(batch, start),
+   sleep)`, with no empty check, because "no new day" is normal.
+2. Per ticker, clean the new frame, then:
+   - **Re-adjustment check**: if the cleaned frame has a row dated `last_date(ticker)` and
+     `abs(new_close / stored_close - 1) > READJUST_TOLERANCE`, Yahoo has re-adjusted the history
+     (split or dividend). Mark the ticker stale and write nothing yet.
+   - Otherwise keep rows with `date > last_date(ticker)`, append them to the stored frame, write.
+     Without an overlap row nothing can be checked, so append as usual. A missing or empty frame is
+     a success with 0 rows.
+   - A batch exception after retries → the batch's tickers fail.
+3. **Full reload** of the batch's stale tickers in one call:
+   `call_with_retry(lambda: fetch_nonempty(stale), sleep)` (period `max`). Per ticker: clean, and
+   replace the stored file with the full history; add it to `reloaded` and `succeeded`, and add the
+   rows written to `rows`. No frame → failed `"keine Daten"`. An exception after retries → every
+   stale ticker fails with `repr(error)`. On any failure the stored file stays unchanged, so the next
+   `update` detects the difference again.
+4. Pause between batches as in download.
+
+Keep `update` within the limits (50 lines, complexity 10) with helpers, for example
+`_update_batch(...)`, `_is_readjusted(stored, fresh) -> bool` and `_reload(stale, ...)`.
 
 **render** (example):
 
@@ -160,6 +178,9 @@ Zeilen: 3912114 · Korrekturen: 57 · entfernte Zeilen: 311
 Fehlgeschlagen:
   ABC: keine Daten
 ```
+
+For `update`, add the line `Neu geladen (Kursbereinigung geändert): AAPL, NVDA` when `reloaded` is
+not empty.
 
 ### 2.5 `universe.py` (adapter) and `universe.csv`
 
@@ -231,7 +252,13 @@ def main(argv: Sequence[str] | None = None) -> int:
 | | empty batch is retried | fake returns `{}` 4× → sleeps `[2.0, 4.0, 8.0]`, all failed "keine Daten" |
 | | pause between batches | 3 tickers, batch_size 1, pause 1.5 → sleeps `[1.5, 1.5]` |
 | | restart skips complete tickers | AAA in store → fake called only with `["BBB"]`; AAA in `skipped` |
-| | update appends only new days | store up to D; fake returns D−1…D+2 → file has D+1, D+2 appended; fake got `start == D + 1 day` |
+| | update appends only new days | store up to D; fake returns D−1…D+2 with the stored close at D → file has D+1, D+2 appended; fake got `start == D` (inclusive, D13) |
+| | re-adjustment triggers a full reload | stored close at D = 100.0; fake for `start == D` returns close 50.0 at D (2:1 split); fake for `start is None` returns the full history with halved prices → the stored file equals the cleaned full history; ticker in `reloaded`; the second fake call got `(["AAA"], None)` |
+| | within tolerance → append only | close at D 100.4 vs 100.0 (0.4 %) → rows appended, no second fetch call |
+| | boundary is exclusive | close at D 100.5 vs 100.0 (exactly 0.5 %) → no reload |
+| | reload fails → file unchanged | the full-history fetch raises every time → ticker failed with the repr, stored file byte-identical, sleeps `[2.0, 4.0, 8.0]` |
+| | no overlap row → append | fake frame starts at D+1 → rows appended, no reload |
+| | render lists reloads | "Neu geladen" and the ticker in `render()` |
 | | update without new rows | fake returns `{}` → succeeded, 0 rows, no retries (sleeps `[]`) |
 | | report counts | rows, corrections, dropped add up; `render()` contains "erfolgreich" and the failed ticker |
 | `test_universe.py` | no duplicate tickers, no empty fields, ≥ 600 rows, markets ⊆ `MARKETS`, DAX/MDAX/SDAX tickers end with `.DE`, tickers upper-case without spaces | |
@@ -259,7 +286,8 @@ Build the synthetic frames with `tests.helpers.make_bars`. No test touches the n
 `uv run gt data download` for the full universe. It runs sequentially, about 10–20 minutes.
 Success rate ≥ 95 %. Put the date, success count, failure count and the failed tickers (or how many)
 into `IMPLEMENTATION.md` §4. If > 5 % fail, rerun once (it resumes); if still > 5 %, report to the
-user (PRD risk trigger). Then run `uv run gt data update` once, which should add 0–1 rows per ticker.
+user (PRD risk trigger). Then run `uv run gt data update` once, which should add 0–1 rows per ticker
+and usually reload a few tickers (dividends since the download). Note the reload count.
 
 ## 6. Pitfalls
 
