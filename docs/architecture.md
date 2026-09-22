@@ -52,6 +52,27 @@ function), so tests can monkeypatch them. `data_sync.py` takes both as injected 
 re-adjustment logic (D13, see [spec-common.md](spec-common.md#1-decisions-beyond-the-prd)) unit
 -testable without a network. Ticker universe and data layout: [docs/data.md](data.md).
 
+## M2 data flow
+
+```
+gt app -> cli.py -> ui/root.py (root(), header, theme resolution)
+                          |
+                    ui/play.py (pick_random_chart, PriceStore)
+                          |
+                    indicators.py -> chart.py (decision_window, build_figure)
+                          |
+                    ui/chart_panel.py (preset buttons + ui.plotly)
+```
+
+`decision_window` drops the `date` column and re-indexes to an integer `x` relative to the decision
+day, so nothing downstream (chart, JSON sent to the browser) can leak the real date. `chart.py`
+converts every trace array to a plain Python list before handing it to plotly; pandas/numpy-backed
+arrays make plotly 7 emit base64-encoded `bdata` blocks instead of plain JSON, which is harder to
+inspect and unnecessary at this data size. `ui/chart_panel.py` and `ui/root.py` each carry one
+`# pyright: ignore[reportUnknownMemberType]` for a NiceGUI 3.17.1 stub gap (`ui.run`'s bare
+`Callable` parameter, `update_figure`'s reference to plotly's unstubbed `Figure`), both verified in
+isolation to be library-stub limitations, not application code.
+
 ## Known limits
 
 - `pre-commit run --all-files` checks only files git tracks. New untracked files are formatted by
