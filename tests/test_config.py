@@ -9,6 +9,8 @@ def test_defaults() -> None:
     assert cfg.yahoo_pause_s == 2.0
     assert cfg.port == 8537
     assert cfg.prices_dir == Path("data") / "prices"
+    assert cfg.snapshots_parquet == Path("data") / "snapshots.parquet"
+    assert cfg.snapshots_json == Path("data") / "snapshots.json"
 
 
 def test_env_override() -> None:

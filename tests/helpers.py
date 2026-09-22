@@ -52,6 +52,17 @@ def random_walk_bars(
     return make_bars(closes.tolist(), start=start)
 
 
+def bars_with_gap(
+    n: int, seed: int, gap_at: int, gap_days: int, *, start_price: float = 50.0, sigma: float = 0.02
+) -> pd.DataFrame:
+    """`random_walk_bars` with every date from `gap_at` on shifted by `gap_days`."""
+    bars = random_walk_bars(n, seed, start_price=start_price, sigma=sigma)
+    dates = list(bars["date"])
+    offset = pd.Timedelta(days=gap_days)
+    shifted = [d + offset if i >= gap_at else d for i, d in enumerate(dates)]
+    return bars.assign(date=pd.Series(shifted).astype("datetime64[ns]"))
+
+
 def write_store(root: Path, frames: Mapping[str, pd.DataFrame]) -> PriceStore:
     store = PriceStore(root)
     for ticker, df in frames.items():

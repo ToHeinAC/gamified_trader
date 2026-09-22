@@ -16,6 +16,14 @@ class Config:
     def prices_dir(self) -> Path:
         return self.data_dir / "prices"
 
+    @property
+    def snapshots_parquet(self) -> Path:
+        return self.data_dir / "snapshots.parquet"
+
+    @property
+    def snapshots_json(self) -> Path:
+        return self.data_dir / "snapshots.json"
+
 
 def load_config(env: Mapping[str, str] | None = None) -> Config:
     source = os.environ if env is None else env
