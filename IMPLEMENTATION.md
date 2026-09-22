@@ -117,7 +117,11 @@ Release 1: start with [docs/spec-common.md](docs/spec-common.md), then the miles
   still carries the caller's theme-dependent figure logic (including the decision view's preview
   overlay), so the spec's "presets rebuild with apply_preset" / "decision view passes a closure
   that also applies the current preview" both hold.
-- M6.1 (2026-09-22): implemented per PRD §4 M6.1, no deviations — CSS-only (Tailwind `lg:`
-  breakpoint), no new logic. Details: [docs/architecture.md](docs/architecture.md#m61-desktop-layout).
-  Manual check (≥ 1024 px real browser, stacked vs. two-pane comparison) is still pending, same
-  class of gap as M2/M6's browser-only manual steps (no browser available in this environment).
+- M6.1 (2026-09-22): implemented per PRD §4 M6.1 — CSS-only (Tailwind `lg:` breakpoint), no new
+  logic. Details: [docs/architecture.md](docs/architecture.md#m61-desktop-layout). Manual check via
+  headless Chromium (Playwright, since no interactive browser is available in this environment):
+  `gt app` on real data, real user; 1440 px shows the two-pane Spielen layout and the paired Setup
+  cards; 1023 px falls back to the exact M6 stacked layout; 390 px unchanged. One real bug found and
+  fixed this way (not catchable by the class-only `User`-fixture tests): Quasar's `.flex` utility
+  collided with Tailwind's, wrapping the two panes despite a correct `flex-direction: row` — see
+  architecture doc for the fix and the general gotcha.

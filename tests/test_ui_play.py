@@ -79,6 +79,9 @@ async def test_decision_layout_has_desktop_breakpoint_classes(
     layout = next(iter(gt_user.find(marker="decision-layout").elements))
     assert "flex-col" in layout.classes
     assert "lg:flex-row" in layout.classes
+    # Quasar's own `.flex` utility sets `flex-wrap: wrap`, which collides with Tailwind's
+    # `.flex` (no wrap) and would stack the panes even at lg: width; force nowrap explicitly.
+    assert "lg:flex-nowrap" in layout.classes
 
     chart_pane = next(iter(gt_user.find(marker="decision-chart-pane").elements))
     assert "lg:w-[64%]" in chart_pane.classes

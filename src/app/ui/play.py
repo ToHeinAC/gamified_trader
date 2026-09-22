@@ -126,7 +126,7 @@ class DecisionView:
 
         with (
             ui.element("div")
-            .classes("w-full flex flex-col lg:flex-row lg:gap-6")
+            .classes("w-full flex flex-col lg:flex-row lg:flex-nowrap lg:gap-6")
             .mark("decision-layout")
         ):
             with (

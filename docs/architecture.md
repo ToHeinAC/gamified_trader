@@ -199,6 +199,16 @@ round-lifecycle logic — it is CSS classes on existing containers only, verifie
 rendered elements' classes in the `User` fixture (NiceGUI's test client doesn't evaluate media
 queries, so there is no way to assert the *applied* layout without a real browser).
 
+Manual check (2026-09-22, headless Chromium via Playwright) caught a real bug this class-only
+testing can't: Quasar's own `.flex` utility also sets `flex-wrap: wrap`, colliding with Tailwind's
+`.flex` (no wrap); at ≥1024 px the two panes computed `flex-direction: row` but still wrapped onto
+separate lines because their combined width slightly exceeded the container. Fixed by adding
+`lg:flex-nowrap` to `decision-layout`'s classes, and added an assertion for that class next to the
+existing ones so a future edit can't silently drop it. Any new side-by-side `flex` row built with
+Tailwind's `flex`/`lg:flex-row` on a plain `ui.element` needs the same explicit `flex-nowrap` —
+verify with a real browser (`getComputedStyle(...).flexWrap`), not just the class list, since the
+class being present doesn't guarantee it wins the cascade against Quasar's own rules.
+
 ## Known limits
 
 - `pre-commit run --all-files` checks only files git tracks. New untracked files are formatted by
