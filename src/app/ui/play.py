@@ -6,10 +6,10 @@ import pandas as pd
 from nicegui import ui
 
 from app.chart import decision_window
-from app.config import load_config
 from app.indicators import with_indicators
 from app.price_store import PriceStore
 from app.ui.chart_panel import chart_panel
+from app.ui.context import PageContext
 
 MIN_ROWS = 250
 
@@ -28,11 +28,15 @@ def pick_random_chart(store: PriceStore, rng: random.Random) -> tuple[pd.DataFra
     return bars, t0_idx
 
 
-def play_page(dark: ui.dark_mode) -> None:
-    cfg = load_config()
-    picked = pick_random_chart(PriceStore(cfg.prices_dir), random.Random())
+def play_page(ctx: PageContext) -> None:
+    if ctx.active_user() is None:
+        ui.label("Noch kein Nutzer angelegt.")
+        ui.link("Zum Setup", "/setup")
+        return
+
+    picked = pick_random_chart(PriceStore(ctx.cfg.prices_dir), random.Random())
     if picked is None:
         ui.label("Keine Kursdaten gefunden. Bitte zuerst `gt data download` ausführen.")
         return
     bars, t0_idx = picked
-    chart_panel(decision_window(with_indicators(bars), t0_idx), dark)
+    chart_panel(decision_window(with_indicators(bars), t0_idx), ctx)

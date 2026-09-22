@@ -24,6 +24,10 @@ class Config:
     def snapshots_json(self) -> Path:
         return self.data_dir / "snapshots.json"
 
+    @property
+    def db_path(self) -> Path:
+        return self.data_dir / "app.db"
+
 
 def load_config(env: Mapping[str, str] | None = None) -> Config:
     source = os.environ if env is None else env

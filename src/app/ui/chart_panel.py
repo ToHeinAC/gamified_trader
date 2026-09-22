@@ -5,13 +5,14 @@ from nicegui import ui
 
 from app.chart import PRESETS, START_PRESET, apply_preset, build_figure
 from app.theme import theme_for
+from app.ui.context import PageContext
 
 
-def chart_panel(window: pd.DataFrame, dark: ui.dark_mode) -> ui.plotly:
+def chart_panel(window: pd.DataFrame, ctx: PageContext) -> ui.plotly:
     preset = {"current": START_PRESET}
 
     def _figure():
-        fig = build_figure(window, theme_for(dark.value is True))
+        fig = build_figure(window, theme_for(ctx.dark.value is True))
         apply_preset(fig, window, preset["current"])
         return fig
 
@@ -32,5 +33,5 @@ def chart_panel(window: pd.DataFrame, dark: ui.dark_mode) -> ui.plotly:
             return
         plot.update_figure(_figure())  # pyright: ignore[reportUnknownMemberType]
 
-    dark.on_value_change(_on_dark_change)
+    ctx.dark.on_value_change(_on_dark_change)
     return plot
