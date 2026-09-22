@@ -73,6 +73,23 @@ inspect and unnecessary at this data size. `ui/chart_panel.py` and `ui/root.py` 
 `Callable` parameter, `update_figure`'s reference to plotly's unstubbed `Figure`), both verified in
 isolation to be library-stub limitations, not application code.
 
+## M3 trading rules
+
+```
+trading.py: make_card(s) -> Card (fixed at Tag 0)
+                                |
+                          simulate(_all) -> TradeResult (R6 exit rules)
+                                |
+                option_values -> points/label/book/k_locked (R7-R9)
+```
+
+Pure module, no pandas and no I/O (D1: `decimal.Decimal` throughout, `dec(x) = Decimal(repr(x))`).
+Callers (M4 pool, M6 game) pass plain lists of `(open, high, low, close)` float tuples for `future`
+and never re-implement a rule. The card is fixed once at Tag 0; `simulate` reuses `card.d`,
+`card.stake` and `card.fee` unchanged even when the entry price differs from P0. `exit_on_day`
+checks gap exits (KO, SL, TP, in that order) only from day 2 onward, then intraday SL/TP for every
+day — the entry day can't gap against its own opening price.
+
 ## Known limits
 
 - `pre-commit run --all-files` checks only files git tracks. New untracked files are formatted by

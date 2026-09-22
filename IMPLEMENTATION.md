@@ -23,7 +23,7 @@ Release 1: start with [docs/spec-common.md](docs/spec-common.md), then the miles
 | 0 | Blueprint skeleton (no PRD milestone) | done | full gate green | — |
 | 1 | M1: Kursdaten und Universum | done | acceptance tests M1, full gate green | [M1](docs/spec-m1-data.md) |
 | 2 | M2: Indikatoren, Chart und App-Grundgerüst | done | acceptance tests M2, full gate green | [M2](docs/spec-m2-chart-app.md) |
-| 3 | M3: Handelsvorschläge, Simulation und Bewertung | planned | acceptance tests M3 | [M3](docs/spec-m3-trading.md) |
+| 3 | M3: Handelsvorschläge, Simulation und Bewertung | done | acceptance tests M3, full gate green | [M3](docs/spec-m3-trading.md) |
 | 4 | M4: Snapshot-Pool (50.000) | planned | acceptance tests M4 | [M4](docs/spec-m4-pool.md) |
 | 5 | M5: Persistenz und Setup-Modus | planned | acceptance tests M5 | [M5](docs/spec-m5-setup.md) |
 | 6 | M6: Spielmodus | planned | acceptance tests M6 | [M6](docs/spec-m6-game.md) |
@@ -48,6 +48,7 @@ Release 1: start with [docs/spec-common.md](docs/spec-common.md), then the miles
 | `src/app/ui/root.py` | App shell: header, theme resolution, routing (`root()`, `run_app()`). |
 | `src/app/ui/chart_panel.py` | Preset buttons + `ui.plotly` panel, reused unchanged in M6. |
 | `src/app/ui/play.py` | Page "Spielen": picks a random ticker/day and shows its chart. |
+| `src/app/trading.py` | `make_card(s)`, `simulate(_all)`, `option_values`/`points`/`label`/`book`: R3–R9, pure Decimal math. |
 | `src/app/cli.py` | `gt` entry point: `data download`, `data update`, `app`. |
 | `tests/helpers.py` | Synthetic OHLCV factories (`make_bars`, `random_walk_bars`, `write_store`). |
 | `tests/conftest.py` | Shared fixtures; blocks network access in all tests. |
@@ -69,3 +70,5 @@ Release 1: start with [docs/spec-common.md](docs/spec-common.md), then the miles
 - M2 pyright: two NiceGUI 3.17.1 stub gaps needed a scoped `pyright: ignore[reportUnknownMemberType]`
   each (`ui/root.py`'s `ui.run`, `ui/chart_panel.py`'s `update_figure`) — both verified in isolation
   to be gaps in nicegui's own stubs (bare `Callable`/unstubbed `Figure` reference), not our code.
+- M3 (2026-09-22): `trading.py` implemented exactly per spec, no deviations. No manual checks for
+  this milestone (pure module, no UI/CLI wiring yet — M4/M6 call it).
