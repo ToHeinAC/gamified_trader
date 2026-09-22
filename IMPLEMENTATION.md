@@ -26,7 +26,7 @@ Release 1: start with [docs/spec-common.md](docs/spec-common.md), then the miles
 | 3 | M3: Handelsvorschläge, Simulation und Bewertung | done | acceptance tests M3, full gate green | [M3](docs/spec-m3-trading.md) |
 | 4 | M4: Snapshot-Pool (50.000) | done | acceptance tests M4, full gate green | [M4](docs/spec-m4-pool.md) |
 | 5 | M5: Persistenz und Setup-Modus | done | acceptance tests M5, full gate green | [M5](docs/spec-m5-setup.md) |
-| 6 | M6: Spielmodus | planned | acceptance tests M6 | [M6](docs/spec-m6-game.md) |
+| 6 | M6: Spielmodus | done | acceptance tests M6, full gate green | [M6](docs/spec-m6-game.md) |
 | 7 | M7: Features und ML-Modell (preliminary) | planned | after PRD iteration | — |
 | 8 | M8: Entdeckungsmodus (preliminary) | planned | after PRD iteration | — |
 | 9 | M9: Lernmodus (preliminary) | planned | after PRD iteration | — |
@@ -44,10 +44,10 @@ Release 1: start with [docs/spec-common.md](docs/spec-common.md), then the miles
 | `src/app/resources/universe.csv` | 668-row ticker universe; built once, see [docs/data.md](docs/data.md). |
 | `src/app/indicators.py` | `with_indicators`: SMA, Bollinger, Wilder RSI/ATR (R1). |
 | `src/app/theme.py` | `LIGHT`/`DARK` design tokens, `page_css()`. |
-| `src/app/chart.py` | `decision_window` (leak-proof, drops `date`), `build_figure`, presets (R2). |
+| `src/app/chart.py` | `decision_window`/`resolution_window` (leak-proof, drop `date`), `build_figure`, `build_resolution_figure`, `add_preview`, presets (R2). |
 | `src/app/ui/root.py` | App shell: header, theme resolution, routing (`root()`, `run_app()`). |
-| `src/app/ui/chart_panel.py` | Preset buttons + `ui.plotly` panel, reused unchanged in M6. |
-| `src/app/ui/play.py` | Page "Spielen": picks a random ticker/day and shows its chart. |
+| `src/app/ui/chart_panel.py` | `ui.plotly` panel from a figure factory; optional preset buttons. |
+| `src/app/ui/play.py` | Page "Spielen": `PlayPage`/`DecisionView`/`ResolutionView`, the full round loop. |
 | `src/app/trading.py` | `make_card(s)`, `simulate(_all)`, `option_values`/`points`/`label`/`book`: R3–R9, pure Decimal math. |
 | `src/app/signals.py` | `signal_flags`: 9 technical event flags per bar (R11). |
 | `src/app/eligibility.py` | `eligible_mask`: R10 candidate mask per bar. |
@@ -58,6 +58,8 @@ Release 1: start with [docs/spec-common.md](docs/spec-common.md), then the miles
 | `src/app/db.py` | `Database`: SQLite users/settings/resets/active-user (`data/app.db`). |
 | `src/app/ui/context.py` | `PageContext`: per-client `Config`/`Database`/theme/user name shared by pages. |
 | `src/app/ui/setup.py` | Page "Setup": create/select users, edit settings, reset balance. |
+| `src/app/game.py` | Pure: `draw_snapshot`, `Setting`, `card_lines`, `resolve`, `outcome`, `round_number` (R1–R9, D7, D9). |
+| `src/app/game_service.py` | `GameService`: wires DB, pool and prices for `start_round`/`confirm`/`resolution`. |
 | `src/app/cli.py` | `gt` entry point: `data download`, `data update`, `app`, `snapshots build`. |
 | `tests/helpers.py` | Synthetic OHLCV factories (`make_bars`, `random_walk_bars`, `write_store`). |
 | `tests/conftest.py` | Shared fixtures; blocks network access in all tests. |
@@ -101,3 +103,16 @@ Release 1: start with [docs/spec-common.md](docs/spec-common.md), then the miles
   dialog. Two elements needed distinct `.mark(...)` markers ("cancel-reset"/"confirm-reset") beyond
   what the spec's UI table names, because NiceGUI's `find()` text search is substring-based and
   "Guthaben zurücksetzen" and "Zurücksetzen" would otherwise collide.
+- M6 (2026-09-22): implemented exactly per the round-lifecycle rules (D7, D9); one implementer
+  decision on `chart_panel`'s signature (below). Manual checks on the real universe + M4's pool:
+  60 rounds (20 per level) via `GameService` directly, all confirmed without error, timings well
+  inside budget (`start_round` ≤ 0.12 s warm, `resolution` ≤ 0.014 s, vs. the 2 s/1 s targets);
+  `uv run gt app` served the decision view (SL/TP/CRV lines, buy/wait cards) on real data, stopped
+  via its own shutdown. Phone-width layout and light/dark screenshots need a real browser and are
+  a pending manual step for the user (no browser available in this environment).
+- M6 `chart_panel` signature: the spec's `chart_panel(ctx, make_figure, presets)` omits how preset
+  buttons recompute their range without the source `DataFrame`. Kept an explicit `window` parameter
+  (`chart_panel(ctx, window, make_figure, presets)`) since `apply_preset` needs it; `make_figure`
+  still carries the caller's theme-dependent figure logic (including the decision view's preview
+  overlay), so the spec's "presets rebuild with apply_preset" / "decision view passes a closure
+  that also applies the current preview" both hold.

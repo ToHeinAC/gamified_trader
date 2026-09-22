@@ -146,6 +146,45 @@ app_state (key PRIMARY KEY, value)   -- holds 'active_user_id'
 `dark` and the header's `user_name`. `chart_panel` and `play_page` take `ctx` instead of `dark`
 directly, so M6 can extend them without changing their signatures again.
 
+## M6 game rounds
+
+```
+gt app -> ui/play.py: PlayPage.render()
+              |
+     draw/current round (GameService, game_service.py)
+              |         \
+        DecisionView    ResolutionView
+        (open round)    (done round)
+              |               |
+      game.py: decision_cards  game.py: resolve (deterministic replay)
+      chart.py: build_figure   chart.py: build_resolution_figure
+      + add_preview                + signal_flags, EVENT_LABELS
+              |
+     "Entscheidung bestätigen" -> GameService.confirm
+              |
+     db.py: confirm_round (one transaction: read balance, compute
+             outcome, write rounds + users, or roll back)
+```
+
+`GameService.confirm` reads the user's balance *inside* `Database.confirm_round`'s transaction,
+never the value the page last rendered — a second confirmation (double click, stale tab) finds the
+round already `status = 'done'` and books nothing. `game.resolve` is the single source of truth for
+both booking (via `confirm`) and later replay (via `resolution`): the resolution view recomputes the
+outcome from the round's *stored* settings (`setting_of_round`) rather than reading them back from
+the DB's other columns, so the table the player sees always matches what was booked.
+
+Leak-proofing carries over from M2: `DecisionView` never puts the ticker, company name or `t0` into
+any element prop, marker, table row key, notification or the page itself before confirmation —
+`chart.py`'s `decision_window` already drops the `date` column, and `ui/play.py` only reveals
+`service.name_of(ticker)` and `date_de(t0)` inside `ResolutionView`, after `rnd.status == "done"`.
+
+`chart_panel(ctx, window, make_figure, presets)` takes an explicit `window` alongside the figure
+factory (a deviation from the spec's `chart_panel(ctx, make_figure, presets)` — see
+[IMPLEMENTATION.md](../IMPLEMENTATION.md) §4): preset buttons call `apply_preset(fig, window,
+name)`, which needs the source DataFrame, not just a already-built `Figure`. `make_figure` still
+carries the caller's per-theme figure logic, so `DecisionView`'s closure adds the preview overlay
+and `ResolutionView`'s closure calls `build_resolution_figure` unchanged.
+
 ## Known limits
 
 - `pre-commit run --all-files` checks only files git tracks. New untracked files are formatted by
