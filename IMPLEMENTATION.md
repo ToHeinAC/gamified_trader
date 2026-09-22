@@ -24,7 +24,7 @@ Release 1: start with [docs/spec-common.md](docs/spec-common.md), then the miles
 | 1 | M1: Kursdaten und Universum | done | acceptance tests M1, full gate green | [M1](docs/spec-m1-data.md) |
 | 2 | M2: Indikatoren, Chart und App-Grundgerüst | done | acceptance tests M2, full gate green | [M2](docs/spec-m2-chart-app.md) |
 | 3 | M3: Handelsvorschläge, Simulation und Bewertung | done | acceptance tests M3, full gate green | [M3](docs/spec-m3-trading.md) |
-| 4 | M4: Snapshot-Pool (50.000) | planned | acceptance tests M4 | [M4](docs/spec-m4-pool.md) |
+| 4 | M4: Snapshot-Pool (50.000) | done | acceptance tests M4, full gate green | [M4](docs/spec-m4-pool.md) |
 | 5 | M5: Persistenz und Setup-Modus | planned | acceptance tests M5 | [M5](docs/spec-m5-setup.md) |
 | 6 | M6: Spielmodus | planned | acceptance tests M6 | [M6](docs/spec-m6-game.md) |
 | 7 | M7: Features und ML-Modell (preliminary) | planned | after PRD iteration | — |
@@ -49,7 +49,11 @@ Release 1: start with [docs/spec-common.md](docs/spec-common.md), then the miles
 | `src/app/ui/chart_panel.py` | Preset buttons + `ui.plotly` panel, reused unchanged in M6. |
 | `src/app/ui/play.py` | Page "Spielen": picks a random ticker/day and shows its chart. |
 | `src/app/trading.py` | `make_card(s)`, `simulate(_all)`, `option_values`/`points`/`label`/`book`: R3–R9, pure Decimal math. |
-| `src/app/cli.py` | `gt` entry point: `data download`, `data update`, `app`. |
+| `src/app/signals.py` | `signal_flags`: 9 technical event flags per bar (R11). |
+| `src/app/eligibility.py` | `eligible_mask`: R10 candidate mask per bar. |
+| `src/app/pool.py` | `ticker_candidates`, `select`, `build_pool`: deterministic snapshot selection and rows. See [docs/pool.md](docs/pool.md). |
+| `src/app/pool_store.py` | `write_pool`/`read_pool`/`read_meta`: `snapshots.parquet` + `snapshots.json`. |
+| `src/app/cli.py` | `gt` entry point: `data download`, `data update`, `app`, `snapshots build`. |
 | `tests/helpers.py` | Synthetic OHLCV factories (`make_bars`, `random_walk_bars`, `write_store`). |
 | `tests/conftest.py` | Shared fixtures; blocks network access in all tests. |
 | `tests/test_code_rules.py` | Enforces functions ≤ 50 lines in `src/`, `tests/`, `.claude/hooks/`. |
@@ -72,3 +76,16 @@ Release 1: start with [docs/spec-common.md](docs/spec-common.md), then the miles
   to be gaps in nicegui's own stubs (bare `Callable`/unstubbed `Figure` reference), not our code.
 - M3 (2026-09-22): `trading.py` implemented exactly per spec, no deviations. No manual checks for
   this milestone (pure module, no UI/CLI wiring yet — M4/M6 call it).
+- M4 manual check (2026-09-22): `gt snapshots build --n 50000 --seed 42` on the full universe took
+  1 m 12 s (budget ≤ 15 min); 667 tickers, 12 without snapshots, signal share 70.0 % exactly, buy
+  share 45–52 % across leverages (PRD survivorship-bias trigger not hit). Details:
+  [docs/pool.md](docs/pool.md#manual-full-build-2026-09-22).
+- M4 pyright: numpy's own overloads for `cumsum`, `where`, `flatnonzero`, `concatenate` and
+  `permutation` are ambiguous under strict mode (verified in isolation, outside project settings,
+  same class of stub gap as M2's NiceGUI/plotly issues) — 7 scoped
+  `pyright: ignore[reportUnknownMemberType]` across `eligibility.py` and `pool.py`, each commented.
+- M4 `pool.py` `select`: the spec's literal pseudocode gives pass 2 (non-signal fill) a fixed target
+  `N - n_sig`, which can leave the pool short of `N` when signal days are scarce. Implemented pass
+  2's target as `N - <actual signal count>` instead (dynamic), matching D6's stated intent that a
+  signal shortage should be made up by *more* non-signal days, not a smaller pool. Documented in
+  [docs/pool.md](docs/pool.md#selection-poolpy).

@@ -90,6 +90,30 @@ and never re-implement a rule. The card is fixed once at Tag 0; `simulate` reuse
 checks gap exits (KO, SL, TP, in that order) only from day 2 onward, then intraday SL/TP for every
 day — the entry day can't gap against its own opening price.
 
+## M4 snapshot pool
+
+```
+gt snapshots build -> cli.py -> pool.py: build_pool
+                                    |            \
+                          eligibility.py      signals.py
+                          (R10 candidate mask) (R11 event flags)
+                                    |
+                          select (deterministic, seeded)
+                                    |
+                          snapshot_row -> trading.py (make_cards, simulate_all, option_values)
+                                    |
+                              pool_store.py (snapshots.parquet + snapshots.json, atomic)
+```
+
+`build_pool` runs in three phases: gather per-ticker candidate indices (vectorized, only the small
+`idx`/`is_signal` arrays are kept, not the full bars), select `N` of them deterministically, then
+recompute indicators/flags only for the selected tickers to build rows. numpy's own stubs are
+ambiguous for `cumsum`, `where`, `flatnonzero`, `concatenate` and `permutation` under pyright strict
+(verified in isolation) — `eligibility.py` and `pool.py` each carry scoped
+`# pyright: ignore[reportUnknownMemberType]` comments for these, same class of issue as M2's
+NiceGUI/plotly stub gaps. Schema, selection algorithm and the manual full-build results:
+[docs/pool.md](pool.md).
+
 ## Known limits
 
 - `pre-commit run --all-files` checks only files git tracks. New untracked files are formatted by

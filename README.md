@@ -21,11 +21,13 @@ uv run gt data download                 # full universe (src/app/resources/unive
 uv run gt data download --tickers AAPL  # a subset
 uv run gt data update                   # append new days, reload on split/dividend re-adjustment
 uv run gt app                           # web app: random chart, light/dark, "App beenden"
+uv run gt snapshots build               # 50,000-snapshot pool (data/snapshots.parquet/.json)
 ```
 
 Config via environment (`.env`, see `.env.example`): `GT_DATA_DIR` (default `data/`),
 `GT_YAHOO_PAUSE_S` (default `2.0`, pause between Yahoo batches), `GT_PORT` (default `8537`).
-Details: [docs/data.md](docs/data.md), [docs/architecture.md](docs/architecture.md).
+Details: [docs/data.md](docs/data.md), [docs/pool.md](docs/pool.md),
+[docs/architecture.md](docs/architecture.md).
 
 ## Layout
 
