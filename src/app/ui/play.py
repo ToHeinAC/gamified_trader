@@ -16,7 +16,16 @@ from app.chart import (
 from app.db import RoundRow, Stats, UserRow
 from app.fmt import cents_eur, date_de, pct
 from app.fmt import points as fmt_points
-from app.game import Resolution, card_lines, decision_cards, round_number, setting_for, wait_lines
+from app.game import (
+    Card,
+    Resolution,
+    Setting,
+    card_lines,
+    decision_cards,
+    round_number,
+    setting_for,
+    wait_lines,
+)
 from app.game_service import GameService, PoolMissingError
 from app.signals import EVENT_LABELS, signal_flags
 from app.theme import Theme
@@ -109,11 +118,34 @@ class DecisionView:
     def _build(self) -> None:
         setting = setting_for(self.user, self.level)
         cards = decision_cards(self.data.snap, setting)
+        locked = k_locked(setting.balance, setting.start_capital)
 
         ui.toggle(
             ["Einfach", "Mittel", "Profi"], value=self.level.value, on_change=self._on_level_change
         ).mark("level")
 
+        with (
+            ui.element("div")
+            .classes("w-full flex flex-col lg:flex-row lg:gap-6")
+            .mark("decision-layout")
+        ):
+            with (
+                ui.element("div")
+                .classes("lg:w-[64%] flex flex-col gap-4")
+                .mark("decision-chart-pane")
+            ):
+                self._chart(cards)
+                if locked:
+                    ui.label("Guthaben unter 1 % des Startkapitals: Kaufoptionen gesperrt.")
+                    ui.link("Zum Setup", "/setup")
+            with (
+                ui.element("div")
+                .classes("lg:w-[36%] flex flex-col gap-4")
+                .mark("decision-options-pane")
+            ):
+                self._option_cards(cards, setting, locked)
+
+    def _chart(self, cards: dict[OptionCode, Card]) -> None:
         def make_figure(theme: Theme) -> Figure:
             fig = build_figure(self.window, theme)
             if self.selected is not None:
@@ -122,11 +154,7 @@ class DecisionView:
 
         chart_panel(self.page.ctx, self.window, make_figure, presets=True)
 
-        locked = k_locked(setting.balance, setting.start_capital)
-        if locked:
-            ui.label("Guthaben unter 1 % des Startkapitals: Kaufoptionen gesperrt.")
-            ui.link("Zum Setup", "/setup")
-
+    def _option_cards(self, cards: dict[OptionCode, Card], setting: Setting, locked: bool) -> None:
         with ui.element("div").classes(_CARD_GRID):
             for horizon in HORIZONS:
                 card = cards[buy_option(horizon)]

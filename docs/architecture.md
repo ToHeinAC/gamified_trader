@@ -185,6 +185,20 @@ name)`, which needs the source DataFrame, not just a already-built `Figure`. `ma
 carries the caller's per-theme figure logic, so `DecisionView`'s closure adds the preview overlay
 and `ResolutionView`'s closure calls `build_resolution_figure` unchanged.
 
+## M6.1 desktop layout
+
+One markup, no separate build or device detection: Tailwind's `lg:` breakpoint (1024 px, already
+used since M2 for the option-card grid) switches the layout, so both the stacked (< 1024 px) and
+the desktop (≥ 1024 px) rules ship in the same `classes(...)` string and the browser's media query
+picks one. `DecisionView._build` wraps the chart and the option/confirm column in a
+`flex flex-col lg:flex-row` div (`decision-chart-pane` ≈64 %, `decision-options-pane` ≈36 %,
+markers used by `tests/test_ui_play.py`); `chart_panel`'s `ui.plotly` grows from `h-[420px]` to
+`lg:h-[720px]`. `SetupView.render` pairs its four cards into two `grid grid-cols-1 lg:grid-cols-2`
+rows (`setup-row-1`/`setup-row-2`). None of this touches `game.py`, `trading.py` or the M6
+round-lifecycle logic — it is CSS classes on existing containers only, verified by asserting the
+rendered elements' classes in the `User` fixture (NiceGUI's test client doesn't evaluate media
+queries, so there is no way to assert the *applied* layout without a real browser).
+
 ## Known limits
 
 - `pre-commit run --all-files` checks only files git tracks. New untracked files are formatted by

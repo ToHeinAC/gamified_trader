@@ -27,6 +27,7 @@ Release 1: start with [docs/spec-common.md](docs/spec-common.md), then the miles
 | 4 | M4: Snapshot-Pool (50.000) | done | acceptance tests M4, full gate green | [M4](docs/spec-m4-pool.md) |
 | 5 | M5: Persistenz und Setup-Modus | done | acceptance tests M5, full gate green | [M5](docs/spec-m5-setup.md) |
 | 6 | M6: Spielmodus | done | acceptance tests M6, full gate green | [M6](docs/spec-m6-game.md) |
+| 6b | M6.1: Desktop-Layout | done | acceptance tests M6.1, full gate green | PRD §4 M6.1 |
 | 7 | M7: Features und ML-Modell (preliminary) | planned | after PRD iteration | — |
 | 8 | M8: Entdeckungsmodus (preliminary) | planned | after PRD iteration | — |
 | 9 | M9: Lernmodus (preliminary) | planned | after PRD iteration | — |
@@ -70,7 +71,7 @@ Release 1: start with [docs/spec-common.md](docs/spec-common.md), then the miles
 
 ## 4. Open issues
 
-- [PRD.md](PRD.md) v0.2: grill-me settled A1–A18 (Release 1 is ready to implement). A19 and A20
+- [PRD.md](PRD.md) v0.3: grill-me settled A1–A18 (Release 1 is ready to implement). A19 and A20
   stay open and must be settled in a separate PRD iteration before M7 starts.
 - M1 manual check (2026-09-22): full `gt data download` succeeded for 666/668 tickers (99.7 %,
   above the 95 % threshold). 1 failure was a universe-CSV suffix bug (fixed); the other is a
@@ -116,3 +117,7 @@ Release 1: start with [docs/spec-common.md](docs/spec-common.md), then the miles
   still carries the caller's theme-dependent figure logic (including the decision view's preview
   overlay), so the spec's "presets rebuild with apply_preset" / "decision view passes a closure
   that also applies the current preview" both hold.
+- M6.1 (2026-09-22): implemented per PRD §4 M6.1, no deviations — CSS-only (Tailwind `lg:`
+  breakpoint), no new logic. Details: [docs/architecture.md](docs/architecture.md#m61-desktop-layout).
+  Manual check (≥ 1024 px real browser, stacked vs. two-pane comparison) is still pending, same
+  class of gap as M2/M6's browser-only manual steps (no browser available in this environment).

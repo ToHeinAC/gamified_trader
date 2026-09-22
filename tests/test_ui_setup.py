@@ -92,6 +92,18 @@ async def test_reset_needs_confirmation(gt_user: User, tmp_path: Path) -> None:
     assert user_after_reset.balance_cents == 1_000_000
 
 
+async def test_setup_cards_paired_for_desktop(gt_user: User, tmp_path: Path) -> None:
+    db = _db(tmp_path)
+    db.init()
+    db.create_user("Anna", 10_000, "2026-09-22T10:00:00+00:00")
+
+    await gt_user.open("/setup")
+    row1 = next(iter(gt_user.find(marker="setup-row-1").elements))
+    row2 = next(iter(gt_user.find(marker="setup-row-2").elements))
+    assert "lg:grid-cols-2" in row1.classes
+    assert "lg:grid-cols-2" in row2.classes
+
+
 async def test_preselected_after_restart(gt_user: User, tmp_path: Path) -> None:
     db = _db(tmp_path)
     db.init()

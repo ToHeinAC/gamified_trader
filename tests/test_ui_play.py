@@ -70,6 +70,27 @@ async def test_reveal_after_confirmation(
     await gt_user.should_see(date_de(rnd.t0))
 
 
+async def test_decision_layout_has_desktop_breakpoint_classes(
+    gt_user: User, tmp_path: Path
+) -> None:
+    make_game_env(tmp_path, seed=4)
+    await gt_user.open("/")
+
+    layout = next(iter(gt_user.find(marker="decision-layout").elements))
+    assert "flex-col" in layout.classes
+    assert "lg:flex-row" in layout.classes
+
+    chart_pane = next(iter(gt_user.find(marker="decision-chart-pane").elements))
+    assert "lg:w-[64%]" in chart_pane.classes
+
+    options_pane = next(iter(gt_user.find(marker="decision-options-pane").elements))
+    assert "lg:w-[36%]" in options_pane.classes
+
+    plot = next(iter(gt_user.find(kind=ui.plotly).elements))
+    assert "h-[420px]" in plot.classes
+    assert "lg:h-[720px]" in plot.classes
+
+
 async def test_reload_keeps_the_round(gt_user: User, tmp_path: Path) -> None:
     cfg, _store, user_id = make_game_env(tmp_path, seed=2)
     db = Database(cfg.db_path)

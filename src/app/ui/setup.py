@@ -29,12 +29,22 @@ class SetupView:
     def render(self) -> None:
         self.container.clear()
         with self.container:
-            self._new_user_card()
+            with (
+                ui.element("div")
+                .classes("w-full grid grid-cols-1 lg:grid-cols-2 gap-4")
+                .mark("setup-row-1")
+            ):
+                self._new_user_card()
+                self._active_user_card()
             user = self.ctx.active_user()
-            self._active_user_card()
             if user is not None:
-                self._settings_card(user)
-                self._balance_card(user)
+                with (
+                    ui.element("div")
+                    .classes("w-full grid grid-cols-1 lg:grid-cols-2 gap-4")
+                    .mark("setup-row-2")
+                ):
+                    self._settings_card(user)
+                    self._balance_card(user)
 
     def _new_user_card(self) -> None:
         with ui.card().classes("gt-card"):

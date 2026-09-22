@@ -31,7 +31,7 @@ def chart_panel(
             with ui.row():
                 for name in PRESETS:
                     ui.button(name, on_click=lambda _e, n=name: _select_preset(n))
-        plot = ui.plotly(_figure()).classes("w-full h-[640px]")
+        plot = ui.plotly(_figure()).classes("w-full h-[420px] lg:h-[720px]")
 
     # ui.plotly.update_figure's signature references plotly's unstubbed Figure type, which
     # nicegui itself doesn't re-stub; same NiceGUI/plotly stub gap as ui/root.py's ui.run.

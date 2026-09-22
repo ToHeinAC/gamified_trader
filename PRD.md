@@ -1,7 +1,7 @@
 # PRD — Gamified Trader (Trading-Lern-App)
 
-> Stand: v0.2 vom 2026-09-21. v0.1 wurde aus der diktierten Produktbeschreibung erstellt und per
-> grill-me verfeinert; die Entscheidungen stehen in §5. Release 1 (M1–M6) ist umsetzungsreif.
+> Stand: v0.3 vom 2026-09-22. v0.1 wurde aus der diktierten Produktbeschreibung erstellt und per
+> grill-me verfeinert; die Entscheidungen stehen in §5. Release 1 (M1–M6, M6.1) ist umsetzungsreif.
 > M7–M9 sind vorläufig: vor M7 folgt eine eigene PRD-Iteration mit den offenen Punkten A19 und A20.
 > Phasenstand: [IMPLEMENTATION.md](IMPLEMENTATION.md).
 
@@ -49,7 +49,9 @@ die Runden messbar steigt.
   Positionsgröße im Spielmodus (das leistet später das Setup-Labor in M9).
 - Kein Überspringen einer Runde (verhindert Rosinenpicken).
 - Kein Login, kein Mehrbenutzer-Serverbetrieb, kein Cloud-Deployment, keine native Mobile-App und
-  kein eigenes Mobil-Layout (der Smartphone-Browser muss nur bedienbar sein, M6).
+  kein separater Mobil-Build (ein Layout, per CSS-Breakpoint responsiv: Desktop-optimiert ab
+  1024 px ist der Standardfall, das bestehende gestapelte Layout bleibt unter 1024 px erhalten,
+  M6.1).
 - Keine Bestenliste, kein Multiplayer, keine Sounds oder Animationen.
 - Keine Mehrsprachigkeit: UI nur auf Deutsch.
 - Keine pixelgenaue Nachbildung der Referenzbilder; sie geben Stil und Farben vor (§3 Design).
@@ -420,6 +422,33 @@ z = 5 % p. a.; soweit nicht anders angegeben öffnet Tag 1 bei E = 100,00:
   wird erneut gezeigt, ohne zweite Buchung. Pool ausgeschöpft → Wiederholung aus den am seltensten
   gespielten Snapshots.
 - **Dependencies:** M2, M3, M4, M5.
+
+### M6.1 — Desktop-Layout
+- **Deliverable:** dasselbe Layout aus M6/M5 wird per CSS-Breakpoint (`lg`, ab 1024 px Fensterbreite)
+  für große Bildschirme optimiert; unterhalb von 1024 px bleibt exakt das gestapelte Layout aus M6
+  bestehen (kein separater Build, keine Geräteerkennung, keine Umschaltoption). Betroffen: Seiten
+  „Spielen" und „Setup".
+  - Entscheidungsansicht: zweispaltig statt gestapelt — Chart links (≈64 % Breite), Options- und
+    Bestätigungsspalte rechts (≈36 % Breite); Stufenwahl bleibt oberhalb beider Spalten.
+  - Chart (Entscheidungs- und Auflösungsansicht): größere Standardhöhe auf großen Bildschirmen als
+    im gestapelten Layout.
+  - Setup: die vier Karten (Neuer Nutzer, Aktiver Nutzer, Einstellungen, Guthaben) stehen zu zweit
+    nebeneinander statt einzeln untereinander.
+- **Acceptance criteria:**
+  - `User`-Fixture-Test: die Entscheidungsansicht rendert einen Chart- und einen Options-Container
+    mit den Breakpoint-Klassen für das Zweispalten-Layout (Test auf die Element-Klassen, kein echter
+    Browser nötig).
+  - `User`-Fixture-Test: der Chart-Container trägt sowohl eine gestapelte als auch eine
+    Desktop-Höhenklasse (beide Regeln gelten gleichzeitig; die Medienabfrage entscheidet im Browser).
+  - `User`-Fixture-Test: die Setup-Karten sind in Zweiergruppen mit einer `lg`-Grid-Klasse verpackt.
+  - Bestehende M5/M6-Tests (Leck-Test, Bestätigungsfluss, Validierung) bleiben unverändert grün —
+    dieses Milestone ändert nur CSS-Klassen, keine Logik.
+  - Manuell: Layout bei ≥ 1024 px Fensterbreite zweispaltig, bei < 1024 px identisch zum bisherigen
+    Screenshot aus M6.
+- **Edge cases:** Fenstergrößen genau auf der Breakpoint-Grenze (1024 px) fallen auf das gestapelte
+  Layout zurück (CSS `min-width`-Regel). Sehr breite Fenster (> 1600 px) begrenzen den Chart- und
+  Options-Bereich nicht künstlich; sie wachsen proportional mit.
+- **Dependencies:** M5, M6.
 
 ### M7 — Features und ML-Modell (vorläufig)
 - **Deliverable:** kausale, skalenfreie Features je Snapshot in `data/features.parquet`; Training und
