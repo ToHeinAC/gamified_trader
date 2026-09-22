@@ -35,6 +35,23 @@ The gate itself is defined once, in `.pre-commit-config.yaml`. The Stop hook and
 - **Function length is checked by an AST test.** ruff has no rule for function lines;
   `tests/test_code_rules.py` has one.
 
+## M1 data flow
+
+```
+gt data download/update -> cli.py -> data_sync.py (retry, batching, SyncReport)
+                                        |         \
+                                  yahoo.py         price_store.py
+                              (yfinance adapter)  (parquet, atomic write)
+                                        |
+                                  cleaning.py (pure OHLCV rules)
+```
+
+`cli.py` looks up `yahoo.fetch_batch` and `time.sleep` at call time (not by importing the bound
+function), so tests can monkeypatch them. `data_sync.py` takes both as injected parameters
+(`FetchFn`, `SleepFn`) and has no I/O of its own, which is what makes its retry, batching and
+re-adjustment logic (D13, see [spec-common.md](spec-common.md#1-decisions-beyond-the-prd)) unit
+-testable without a network. Ticker universe and data layout: [docs/data.md](data.md).
+
 ## Known limits
 
 - `pre-commit run --all-files` checks only files git tracks. New untracked files are formatted by

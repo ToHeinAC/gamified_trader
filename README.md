@@ -1,20 +1,29 @@
-# claude-dev-schema
+# Gamified Trader
 
-A GitHub template for Python projects built with Claude Code and reviewed by a second tool such as
-Codex. The rules are short, and every rule that can be checked is checked by a single quality gate.
+Ein gamifiziertes Trading-Lernspiel mit historischen Kursdaten. Built with Claude Code and
+reviewed by a second tool such as Codex; see [PRD.md](PRD.md) for what and why.
+
+This repo started from a template (below is its own setup story) whose rules and quality gate
+still apply as-is.
 
 ## Use it
 
-1. On GitHub, click **Use this template**, then clone your new repository.
-2. `uv sync && uv run pre-commit install`
-3. `uv run pre-commit run --all-files` should pass.
-4. Set `name` and `description` in `pyproject.toml`. Replace `src/app/core.py` and
-   `tests/test_core.py` with your code.
-5. Write `PRD.md` (see [Skills and commands](#skills-and-commands)) and add its milestones to
-   the phase table in `IMPLEMENTATION.md`.
-6. Start `claude` in the repo. It loads `CLAUDE.md`, which imports `AGENTS.md` and `IMPLEMENTATION.md`.
+1. `uv sync && uv run pre-commit install`
+2. `uv run pre-commit run --all-files` should pass.
+3. Start `claude` in the repo. It loads `CLAUDE.md`, which imports `AGENTS.md` and `IMPLEMENTATION.md`.
 
 Requirements: [uv](https://docs.astral.sh/uv/) and git. uv installs Python itself.
+
+## Usage (M1: Kursdaten)
+
+```bash
+uv run gt data download                 # full universe (src/app/resources/universe.csv)
+uv run gt data download --tickers AAPL  # a subset
+uv run gt data update                   # append new days, reload on split/dividend re-adjustment
+```
+
+Config via environment (`.env`, see `.env.example`): `GT_DATA_DIR` (default `data/`),
+`GT_YAHOO_PAUSE_S` (default `2.0`, pause between Yahoo batches). Details: [docs/data.md](docs/data.md).
 
 ## Layout
 
