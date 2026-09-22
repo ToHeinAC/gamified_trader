@@ -1,42 +1,239 @@
-"""Page "Spielen" (M2 version; M6 replaces the body)."""
-
-import random
+"""Page "Spielen": draw -> decision -> confirmation -> resolution -> next round (PRD M6)."""
 
 import pandas as pd
 from nicegui import ui
+from nicegui.events import ValueChangeEventArguments
 
-from app.chart import decision_window
-from app.indicators import with_indicators
-from app.price_store import PriceStore
+from app.chart import (
+    EXIT_LABELS,
+    Figure,
+    add_preview,
+    build_figure,
+    build_resolution_figure,
+    decision_window,
+    resolution_window,
+)
+from app.db import RoundRow, Stats, UserRow
+from app.fmt import cents_eur, date_de, pct
+from app.fmt import points as fmt_points
+from app.game import Resolution, card_lines, decision_cards, round_number, setting_for, wait_lines
+from app.game_service import GameService, PoolMissingError
+from app.signals import EVENT_LABELS, signal_flags
+from app.theme import Theme
+from app.trading import HORIZONS, OPTIONS, Level, OptionCode, buy_option, k_locked, wait_option
 from app.ui.chart_panel import chart_panel
 from app.ui.context import PageContext
 
-MIN_ROWS = 250
+_CARD_GRID = "grid grid-cols-1 md:grid-cols-3 gap-4"
 
 
-def pick_random_chart(store: PriceStore, rng: random.Random) -> tuple[pd.DataFrame, int] | None:
-    """Random ticker with >= 250 rows; t0_idx uniform in [249, len - 1]. None if none qualifies."""
-    candidates: list[tuple[str, pd.DataFrame]] = []
-    for ticker in store.tickers():
-        bars = store.read(ticker)
-        if len(bars) >= MIN_ROWS:
-            candidates.append((ticker, bars))
-    if not candidates:
-        return None
-    _ticker, bars = rng.choice(candidates)
-    t0_idx = rng.randint(MIN_ROWS - 1, len(bars) - 1)
-    return bars, t0_idx
+class PlayPage:
+    def __init__(self, ctx: PageContext) -> None:
+        self.ctx = ctx
+        self.service = GameService(ctx.cfg, ctx.db)
+        self.container = ui.column().classes("w-full gap-4")
+        self.render()
+
+    def render(self) -> None:
+        self.container.clear()
+        with self.container:
+            self._render_body()
+
+    def _render_body(self) -> None:
+        user = self.ctx.active_user()
+        if user is None:
+            ui.label("Noch kein Nutzer angelegt.")
+            ui.link("Zum Setup", "/setup")
+            return
+        try:
+            rnd = self.service.current(user.id) or self.service.start_round(user.id)
+        except PoolMissingError:
+            ui.label("Kein Snapshot-Pool gefunden. Bitte zuerst `gt snapshots build` ausführen.")
+            return
+
+        stats = self.ctx.db.stats(user.id)
+        self._tiles(user, stats, rnd)
+        if rnd.status == "open":
+            DecisionView(self, user, rnd)
+        else:
+            ResolutionView(self, user, rnd)
+        self._stats_card(stats)
+
+    def _tiles(self, user: UserRow, stats: Stats, rnd: RoundRow) -> None:
+        with ui.row().classes("flex flex-col md:flex-row gap-4"):
+            with ui.card().classes("gt-card"):
+                ui.label(f"Guthaben: {cents_eur(user.balance_cents)}")
+            with ui.card().classes("gt-card"):
+                ui.label(f"Punkte gesamt: {fmt_points(stats.points_total)}")
+            with ui.card().classes("gt-card"):
+                ui.label(f"Runde: {round_number(stats.rounds, rnd.status == 'open')}")
+
+    def _stats_card(self, stats: Stats) -> None:
+        with ui.card().classes("gt-card"):
+            ui.label(
+                f"Runden: {stats.rounds} · Punkte Ø: {stats.points_avg:.1f} · "
+                f"Optimal: {stats.optimal_share:.0%}"
+            )
 
 
 def play_page(ctx: PageContext) -> None:
-    if ctx.active_user() is None:
-        ui.label("Noch kein Nutzer angelegt.")
-        ui.link("Zum Setup", "/setup")
-        return
+    PlayPage(ctx)
 
-    picked = pick_random_chart(PriceStore(ctx.cfg.prices_dir), random.Random())
-    if picked is None:
-        ui.label("Keine Kursdaten gefunden. Bitte zuerst `gt data download` ausführen.")
-        return
-    bars, t0_idx = picked
-    chart_panel(decision_window(with_indicators(bars), t0_idx), ctx)
+
+class DecisionView:
+    def __init__(self, page: PlayPage, user: UserRow, rnd: RoundRow) -> None:
+        self.page = page
+        self.user = user
+        self.rnd = rnd
+        self.level = Level.EINFACH
+        self.selected: OptionCode | None = None
+        self.data = page.service.load(rnd.ticker, rnd.t0)
+        self.window = decision_window(self.data.ind, self.data.t0_idx)
+        self.container = ui.column().classes("w-full gap-4")
+        self._render()
+
+    def _render(self) -> None:
+        self.container.clear()
+        with self.container:
+            self._build()
+
+    def _on_level_change(self, e: ValueChangeEventArguments[str]) -> None:
+        self.level = Level(e.value)
+        self.selected = None
+        self._render()
+
+    def _pick(self, option: OptionCode) -> None:
+        self.selected = option
+        self._render()
+
+    def _build(self) -> None:
+        setting = setting_for(self.user, self.level)
+        cards = decision_cards(self.data.snap, setting)
+
+        ui.toggle(
+            ["Einfach", "Mittel", "Profi"], value=self.level.value, on_change=self._on_level_change
+        ).mark("level")
+
+        def make_figure(theme: Theme) -> Figure:
+            fig = build_figure(self.window, theme)
+            if self.selected is not None:
+                add_preview(fig, self.selected, cards.get(self.selected), theme)
+            return fig
+
+        chart_panel(self.page.ctx, self.window, make_figure, presets=True)
+
+        locked = k_locked(setting.balance, setting.start_capital)
+        if locked:
+            ui.label("Guthaben unter 1 % des Startkapitals: Kaufoptionen gesperrt.")
+            ui.link("Zum Setup", "/setup")
+
+        with ui.element("div").classes(_CARD_GRID):
+            for horizon in HORIZONS:
+                card = cards[buy_option(horizon)]
+                self._option_card(card.option, card_lines(card, setting), disabled=locked)
+        with ui.element("div").classes(_CARD_GRID):
+            for horizon in HORIZONS:
+                self._option_card(wait_option(horizon), wait_lines(horizon), disabled=False)
+
+        confirm_btn = ui.button("Entscheidung bestätigen").mark("confirm")
+        confirm_btn.on_click(lambda: self._confirm(confirm_btn))
+        confirm_btn.set_enabled(self.selected is not None)
+
+    def _option_card(self, option: OptionCode, lines: list[str], *, disabled: bool) -> None:
+        classes = "gt-card" + (" gt-selected" if self.selected == option else "")
+        with ui.card().classes(classes):
+            for line in lines:
+                ui.label(line)
+            btn = ui.button("Auswählen", on_click=lambda: self._pick(option))
+            btn.mark(f"pick-{option.value}")
+            if disabled:
+                btn.disable()
+
+    def _confirm(self, btn: ui.button) -> None:
+        if self.selected is None:
+            return
+        btn.disable()
+        self.page.service.confirm(self.user, self.rnd, self.level, self.selected)
+        self.page.render()
+
+
+class ResolutionView:
+    def __init__(self, page: PlayPage, user: UserRow, rnd: RoundRow) -> None:
+        self.page = page
+        self.user = user
+        self.rnd = rnd
+        self._build()
+
+    def _build(self) -> None:
+        service = self.page.service
+        data = service.load(self.rnd.ticker, self.rnd.t0)
+        res = service.resolution(self.rnd, self.user)
+        name = service.name_of(self.rnd.ticker)
+
+        ui.label(f"{name} ({self.rnd.ticker}) · Tag 0: {date_de(self.rnd.t0)}")
+        self._signal_line(data.ind, data.t0_idx)
+
+        window = resolution_window(data.ind, data.t0_idx)
+
+        def make_figure(theme: Theme) -> Figure:
+            return build_resolution_figure(window, theme, res)
+
+        chart_panel(self.page.ctx, window, make_figure, presets=False)
+        self._table(res)
+        self._summary()
+
+        ui.button("Nächste Runde", on_click=self._next_round)
+
+    def _signal_line(self, ind: pd.DataFrame, t0_idx: int) -> None:
+        flags = signal_flags(ind).iloc[t0_idx]
+        events: list[str] = [
+            label for event, label in EVENT_LABELS.items() if flags[f"sig_{event}"]
+        ]
+        ui.label("; ".join(events) if events else "Keine Signal-Ereignisse an Tag 0.")
+
+    def _table(self, res: Resolution) -> None:
+        if res.neutral:
+            ui.label("Keine Option war vorteilhaft")
+        columns = [
+            {"name": n, "label": label, "field": n}
+            for n, label in (
+                ("option", "Option"),
+                ("wert_pct", "Wert %"),
+                ("wert_eur", "Wert €"),
+                ("exit", "Exit"),
+                ("kosten", "Kosten"),
+                ("punkte", "Punkte"),
+                ("markierung", "Markierung"),
+            )
+        ]
+        rows = [self._row(res, option) for option in OPTIONS]
+        ui.table(columns=columns, rows=rows, row_key="option")
+
+    def _row(self, res: Resolution, option: OptionCode) -> dict[str, object]:
+        o = res.outcomes[option]
+        marks: list[str] = []
+        if option == res.chosen:
+            marks.append("Ihre Wahl")
+        if o.optimal:
+            marks.append("optimal")
+        return {
+            "option": option.value,
+            "wert_pct": pct(o.value),
+            "wert_eur": cents_eur(round(o.amount * 100)),
+            "exit": EXIT_LABELS[o.reason] if o.reason is not None else "",
+            "kosten": cents_eur(round(o.costs * 100)),
+            "punkte": o.points,
+            "markierung": " · ".join(marks),
+        }
+
+    def _summary(self) -> None:
+        before = self.rnd.balance_before_cents or 0
+        after = self.rnd.balance_after_cents or 0
+        ui.label(f"Guthaben vorher {cents_eur(before)} → nachher {cents_eur(after)}")
+        stats = self.page.ctx.db.stats(self.user.id)
+        total = fmt_points(stats.points_total)
+        ui.label(f"Punkte dieser Runde: {self.rnd.points} · Punkte gesamt: {total}")
+
+    def _next_round(self) -> None:
+        self.page.service.start_round(self.user.id)
+        self.page.render()

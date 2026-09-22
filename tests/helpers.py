@@ -6,6 +6,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from app.config import Config
 from app.price_store import PriceStore
 
 
@@ -68,3 +69,28 @@ def write_store(root: Path, frames: Mapping[str, pd.DataFrame]) -> PriceStore:
     for ticker, df in frames.items():
         store.write(ticker, df)
     return store
+
+
+def make_game_env(
+    root: Path,
+    tickers: Sequence[str] = ("ZZA", "ZZB", "ZZLEAK"),
+    n: int = 30,
+    seed: int = 1,
+) -> tuple[Config, PriceStore, int]:
+    """`write_store` with random-walk tickers of 1,600 bars -> `build_pool` -> `write_pool`
+    to the config paths -> create the user "Test" (defaults). Returns (cfg, store, user_id)."""
+    from app.config import load_config
+    from app.db import Database
+    from app.pool import build_pool
+    from app.pool_store import write_pool
+
+    frames = {t: random_walk_bars(1600, seed=i, start_price=50.0) for i, t in enumerate(tickers)}
+    cfg = load_config({"GT_DATA_DIR": str(root)})
+    store = write_store(cfg.prices_dir, frames)
+    df, report = build_pool(list(tickers), store.read, n, seed)
+    write_pool(df, report, cfg.snapshots_parquet, cfg.snapshots_json)
+
+    db = Database(cfg.db_path)
+    db.init()
+    user_id = db.create_user("Test", 10_000, "2026-09-22T10:00:00+00:00")
+    return cfg, store, user_id

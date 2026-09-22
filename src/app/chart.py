@@ -7,8 +7,11 @@ import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
+from app.game import Resolution
 from app.theme import Theme
+from app.trading import Card, ExitReason, OptionCode, horizon_of, is_buy
 
+Figure = go.Figure
 MAX_WINDOW = 1260
 PRESETS: dict[str, int] = {"3M": 63, "6M": 126, "1J": 252, "5J": 1260}
 START_PRESET = "1J"
@@ -169,3 +172,83 @@ def apply_preset(fig: go.Figure, window: pd.DataFrame, preset: str) -> None:
     x_range, y_range = preset_ranges(window, preset)
     fig.update_xaxes(range=list(x_range))
     fig.update_yaxes(range=list(y_range), row=1, col=1)
+
+
+EXIT_LABELS = {
+    ExitReason.TP: "Take-Profit",
+    ExitReason.SL: "Stop-Loss",
+    ExitReason.KO: "Knock-out",
+    ExitReason.TIME: "Zeit",
+}
+
+
+def _preview_k(fig: go.Figure, card: Card, horizon: int, theme: Theme) -> None:
+    x = [0, horizon]
+    fig.add_trace(
+        go.Scatter(x=x, y=[float(card.sl_price)] * 2, name="Vorschau SL", line_color=theme.down)
+    )
+    fig.add_trace(
+        go.Scatter(x=x, y=[float(card.tp_price)] * 2, name="Vorschau TP", line_color=theme.up)
+    )
+    if card.ko_price is not None:
+        fig.add_trace(
+            go.Scatter(
+                x=x,
+                y=[float(card.ko_price)] * 2,
+                name="Vorschau KO",
+                line={"color": theme.muted, "dash": "dot"},
+            )
+        )
+
+
+def add_preview(fig: go.Figure, option: OptionCode, card: Card | None, theme: Theme) -> None:
+    """K: horizontal preview lines for SL/TP(/KO) over x in [0, H]. W: a dashed vline at x = H.
+    Extends the x range's right edge to H + 0.5 (all prices are already on the P0 basis)."""
+    horizon = horizon_of(option)
+    if is_buy(option):
+        assert card is not None
+        _preview_k(fig, card, horizon, theme)
+    else:
+        fig.add_vline(x=horizon, line_dash="dash", annotation_text=f"Tag {horizon}")
+
+    current_range = fig.to_dict()["layout"].get("xaxis", {}).get("range")
+    left = current_range[0] if current_range else None
+    fig.update_xaxes(range=[left, horizon + 0.5])
+
+
+def resolution_window(ind: pd.DataFrame, t0_idx: int) -> pd.DataFrame:
+    """Rows max(0, t0_idx - 1259) .. t0_idx + 120, x = row - t0_idx (… 0 … 120), without date."""
+    start = max(0, t0_idx - (MAX_WINDOW - 1))
+    end = t0_idx + 120
+    window = ind.iloc[start : end + 1].copy()
+    window["x"] = np.arange(start, end + 1) - t0_idx
+    return window.drop(columns=["date"]).reset_index(drop=True)
+
+
+def _add_resolution_markers(fig: go.Figure, res: Resolution) -> None:
+    horizon = horizon_of(res.chosen)
+    if not is_buy(res.chosen):
+        fig.add_vline(x=horizon, line_dash="dash")
+        return
+    result = res.results[horizon]
+    fig.add_trace(go.Scatter(x=[1], y=[float(result.entry)], mode="markers", name="Einstieg"))
+    fig.add_trace(
+        go.Scatter(
+            x=[result.exit_day],
+            y=[float(result.exit_price)],
+            mode="markers",
+            name="Ausstieg",
+            text=[EXIT_LABELS[result.reason]],
+        )
+    )
+
+
+def build_resolution_figure(window: pd.DataFrame, theme: Theme, res: Resolution) -> go.Figure:
+    fig = build_figure(window, theme)
+    fig.add_vrect(x0=0.5, x1=120.5, fillcolor=theme.accent, opacity=0.08, line_width=0)
+    fig.add_vline(x=0, line_dash="dot")
+    _add_resolution_markers(fig, res)
+
+    n = PRESETS["1J"]
+    fig.update_xaxes(range=[-(n - 0.5), 120.5])
+    return fig

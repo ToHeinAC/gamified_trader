@@ -1,5 +1,6 @@
 import json
 import re
+from decimal import Decimal
 
 import numpy as np
 import pytest
@@ -8,12 +9,17 @@ from app.chart import (
     PRESETS,
     START_PRESET,
     TRACE_NAMES,
+    add_preview,
     apply_preset,
     build_figure,
+    build_resolution_figure,
     decision_window,
+    resolution_window,
 )
+from app.game import SnapshotBars, resolve, setting_for
 from app.indicators import with_indicators
 from app.theme import DARK, LIGHT
+from app.trading import DEFAULT_COSTS, Level, OptionCode, make_card
 from tests.helpers import make_bars, random_walk_bars
 
 
@@ -123,3 +129,75 @@ def test_window_json_serializable() -> None:
     fig_json = fig.to_json()
     assert fig_json is not None
     json.loads(fig_json)
+
+
+def test_preview_k_profi() -> None:
+    window = _window(400)
+    fig = build_figure(window, LIGHT)
+    card = make_card(30, 100.0, 2.0, Decimal("10000.00"), 10, DEFAULT_COSTS)
+
+    add_preview(fig, OptionCode.K30, card, LIGHT)
+
+    d = fig.to_dict()
+    names = {t["name"] for t in d["data"]}
+    for name, price in (
+        ("Vorschau SL", card.sl_price),
+        ("Vorschau TP", card.tp_price),
+        ("Vorschau KO", card.ko_price),
+    ):
+        assert price is not None
+        assert name in names
+        trace = next(t for t in d["data"] if t["name"] == name)
+        assert list(trace["x"]) == [0, 30]
+        assert all(y == pytest.approx(float(price)) for y in trace["y"])
+    assert d["layout"]["xaxis"]["range"][1] == pytest.approx(30.5)
+
+
+def test_preview_k_einfach_no_ko() -> None:
+    window = _window(400)
+    fig = build_figure(window, LIGHT)
+    card = make_card(30, 100.0, 2.0, Decimal("10000.00"), 1, DEFAULT_COSTS)
+
+    add_preview(fig, OptionCode.K30, card, LIGHT)
+
+    names = {t["name"] for t in fig.to_dict()["data"]}
+    assert "Vorschau KO" not in names
+
+
+def test_preview_w() -> None:
+    window = _window(400)
+    fig = build_figure(window, LIGHT)
+
+    add_preview(fig, OptionCode.W30, None, LIGHT)
+
+    shapes = fig.to_dict()["layout"]["shapes"]
+    assert any(s["x0"] == s["x1"] == 30 for s in shapes)
+
+
+def test_resolution_figure() -> None:
+    from app.db import UserRow
+
+    bars = random_walk_bars(500, seed=0)
+    ind = with_indicators(bars)
+    t0_idx = 300
+    window = resolution_window(ind, t0_idx)
+
+    user = UserRow(1, "Test", 1_000_000, 1_000_000, 5, 10, 50, 20)
+    setting = setting_for(user, Level.EINFACH)
+    snap = SnapshotBars(
+        p0=float(ind["close"].iloc[t0_idx]),
+        atr=float(ind["atr14"].iloc[t0_idx]),
+        future=ind[["open", "high", "low", "close"]]
+        .iloc[t0_idx + 1 : t0_idx + 121]
+        .to_numpy()
+        .tolist(),
+    )
+    res = resolve(snap, setting, OptionCode.K30)
+
+    fig = build_resolution_figure(window, LIGHT, res)
+    d = fig.to_dict()
+    assert list(d["data"][0]["x"])[-1] == 120
+    shapes = d["layout"]["shapes"]
+    assert any(s.get("x0") == 0.5 for s in shapes)
+    einstieg = next(t for t in d["data"] if t["name"] == "Einstieg")
+    assert list(einstieg["x"]) == [1]

@@ -8,17 +8,9 @@ from nicegui import app as nicegui_app
 from nicegui import ui
 from nicegui.testing import User, user_simulation
 
-from app.config import load_config
-from app.db import Database
 from app.theme import DARK, LIGHT
 from app.ui.root import root
-from tests.helpers import random_walk_bars, write_store
-
-
-def _create_user(tmp_path: Path, name: str = "Anna") -> None:
-    db = Database(load_config({"GT_DATA_DIR": str(tmp_path)}).db_path)
-    db.init()
-    db.create_user(name, 10_000, "2026-09-22T10:00:00+00:00")
+from tests.helpers import make_game_env
 
 
 @pytest.fixture
@@ -34,27 +26,28 @@ async def test_no_user_shows_hint(gt_user: User) -> None:
     await gt_user.should_see("Noch kein Nutzer angelegt.")
 
 
+async def test_pool_missing_shows_hint(gt_user: User, tmp_path: Path) -> None:
+    from app.config import load_config
+    from app.db import Database
+
+    db = Database(load_config({"GT_DATA_DIR": str(tmp_path)}).db_path)
+    db.init()
+    db.create_user("Anna", 10_000, "2026-09-22T10:00:00+00:00")
+
+    await gt_user.open("/")
+    await gt_user.should_see("gt snapshots build")
+
+
 async def test_page_loads_with_a_chart(gt_user: User, tmp_path: Path) -> None:
-    _create_user(tmp_path)
-    write_store(
-        tmp_path / "prices",
-        {"AAA": random_walk_bars(400, 0), "BBB": random_walk_bars(400, 1)},
-    )
+    make_game_env(tmp_path, seed=0)
     await gt_user.open("/")
     plots = list(gt_user.find(ui.plotly).elements)
     assert len(plots) == 1
     assert "SMA200" in str(plots[0].props["options"])
 
 
-async def test_no_data_shows_hint(gt_user: User, tmp_path: Path) -> None:
-    _create_user(tmp_path)
-    await gt_user.open("/")
-    await gt_user.should_see("gt data download")
-
-
 async def test_system_dark_is_resolved(gt_user: User, tmp_path: Path) -> None:
-    _create_user(tmp_path)
-    write_store(tmp_path / "prices", {"AAA": random_walk_bars(400, 0)})
+    make_game_env(tmp_path, seed=0)
     gt_user.javascript_rules[re.compile(".*prefers-color-scheme.*")] = lambda _m: True
     await gt_user.open("/")
 
@@ -67,8 +60,7 @@ async def test_system_dark_is_resolved(gt_user: User, tmp_path: Path) -> None:
 
 
 async def test_toggle_theme(gt_user: User, tmp_path: Path) -> None:
-    _create_user(tmp_path)
-    write_store(tmp_path / "prices", {"AAA": random_walk_bars(400, 0)})
+    make_game_env(tmp_path, seed=0)
     gt_user.javascript_rules[re.compile(".*prefers-color-scheme.*")] = lambda _m: True
     await gt_user.open("/")
 
@@ -87,8 +79,7 @@ async def test_toggle_theme(gt_user: User, tmp_path: Path) -> None:
 
 
 async def test_stored_choice_wins_over_system(gt_user: User, tmp_path: Path) -> None:
-    _create_user(tmp_path)
-    write_store(tmp_path / "prices", {"AAA": random_walk_bars(400, 0)})
+    make_game_env(tmp_path, seed=0)
     nicegui_app.storage.general["dark_mode"] = False
     gt_user.javascript_rules[re.compile(".*prefers-color-scheme.*")] = lambda _m: True
     await gt_user.open("/")
@@ -98,8 +89,7 @@ async def test_stored_choice_wins_over_system(gt_user: User, tmp_path: Path) -> 
 async def test_shutdown_button(
     gt_user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    _create_user(tmp_path)
-    write_store(tmp_path / "prices", {"AAA": random_walk_bars(400, 0)})
+    make_game_env(tmp_path, seed=0)
     shutdown = MagicMock()
     monkeypatch.setattr(nicegui_app, "shutdown", shutdown)
     await gt_user.open("/")
@@ -108,8 +98,7 @@ async def test_shutdown_button(
 
 
 async def test_preset_button(gt_user: User, tmp_path: Path) -> None:
-    _create_user(tmp_path)
-    write_store(tmp_path / "prices", {"AAA": random_walk_bars(400, 0)})
+    make_game_env(tmp_path, seed=0)
     await gt_user.open("/")
     gt_user.find("3M").click()
 
