@@ -26,7 +26,7 @@ from app.game import (
     setting_for,
     wait_lines,
 )
-from app.game_service import GameService, PoolMissingError
+from app.game_service import GameService, PoolMissingError, RoundData
 from app.signals import EVENT_LABELS, signal_flags
 from app.theme import Theme
 from app.trading import HORIZONS, OPTIONS, Level, OptionCode, buy_option, k_locked, wait_option
@@ -60,33 +60,35 @@ class PlayPage:
             ui.label("Kein Snapshot-Pool gefunden. Bitte zuerst `gt snapshots build` ausführen.")
             return
 
-        stats = self.ctx.db.stats(user.id)
-        self._tiles(user, stats, rnd)
         if rnd.status == "open":
+            stats = self.ctx.db.stats(user.id)
+            _tiles(user, stats, rnd)
             DecisionView(self, user, rnd)
+            _stats_card(stats)
         else:
             ResolutionView(self, user, rnd)
-        self._stats_card(stats)
-
-    def _tiles(self, user: UserRow, stats: Stats, rnd: RoundRow) -> None:
-        with ui.row().classes("flex flex-col md:flex-row gap-4"):
-            with ui.card().classes("gt-card"):
-                ui.label(f"Guthaben: {cents_eur(user.balance_cents)}")
-            with ui.card().classes("gt-card"):
-                ui.label(f"Punkte gesamt: {fmt_points(stats.points_total)}")
-            with ui.card().classes("gt-card"):
-                ui.label(f"Runde: {round_number(stats.rounds, rnd.status == 'open')}")
-
-    def _stats_card(self, stats: Stats) -> None:
-        with ui.card().classes("gt-card"):
-            ui.label(
-                f"Runden: {stats.rounds} · Punkte Ø: {stats.points_avg:.1f} · "
-                f"Optimal: {stats.optimal_share:.0%}"
-            )
 
 
 def play_page(ctx: PageContext) -> None:
     PlayPage(ctx)
+
+
+def _tiles(user: UserRow, stats: Stats, rnd: RoundRow) -> None:
+    with ui.row().classes("flex flex-col md:flex-row gap-4"):
+        with ui.card().classes("gt-card"):
+            ui.label(f"Guthaben: {cents_eur(user.balance_cents)}")
+        with ui.card().classes("gt-card"):
+            ui.label(f"Punkte gesamt: {fmt_points(stats.points_total)}")
+        with ui.card().classes("gt-card"):
+            ui.label(f"Runde: {round_number(stats.rounds, rnd.status == 'open')}")
+
+
+def _stats_card(stats: Stats) -> None:
+    with ui.card().classes("gt-card"):
+        ui.label(
+            f"Runden: {stats.rounds} · Punkte Ø: {stats.points_avg:.1f} · "
+            f"Optimal: {stats.optimal_share:.0%}"
+        )
 
 
 class DecisionView:
@@ -196,21 +198,39 @@ class ResolutionView:
         service = self.page.service
         data = service.load(self.rnd.ticker, self.rnd.t0)
         res = service.resolution(self.rnd, self.user)
-        name = service.name_of(self.rnd.ticker)
+        stats = self.page.ctx.db.stats(self.user.id)
 
-        ui.label(f"{name} ({self.rnd.ticker}) · Tag 0: {date_de(self.rnd.t0)}")
-        self._signal_line(data.ind, data.t0_idx)
+        with ui.element("div").classes("w-full gt-resolution-grid").mark("resolution-layout"):
+            with ui.element("div").classes("gt-area-tiles").mark("resolution-tiles-pane"):
+                _tiles(self.user, stats, self.rnd)
+            self._chart_pane(data, res)
+            with (
+                ui.element("div")
+                .classes("gt-area-result flex flex-col gap-4")
+                .mark("resolution-result-pane")
+            ):
+                self._table(res)
+                self._summary(stats)
+            with ui.element("div").classes("gt-area-next").mark("resolution-next-pane"):
+                ui.button("Nächste Runde", on_click=self._next_round)
+            with ui.element("div").classes("gt-area-stats").mark("resolution-stats-pane"):
+                _stats_card(stats)
 
+    def _chart_pane(self, data: RoundData, res: Resolution) -> None:
+        name = self.page.service.name_of(self.rnd.ticker)
         window = resolution_window(data.ind, data.t0_idx)
 
         def make_figure(theme: Theme) -> Figure:
             return build_resolution_figure(window, theme, res)
 
-        chart_panel(self.page.ctx, window, make_figure, presets=False)
-        self._table(res)
-        self._summary()
-
-        ui.button("Nächste Runde", on_click=self._next_round)
+        with (
+            ui.element("div")
+            .classes("gt-area-chart flex flex-col gap-4")
+            .mark("resolution-chart-pane")
+        ):
+            ui.label(f"{name} ({self.rnd.ticker}) · Tag 0: {date_de(self.rnd.t0)}")
+            self._signal_line(data.ind, data.t0_idx)
+            chart_panel(self.page.ctx, window, make_figure, presets=False)
 
     def _signal_line(self, ind: pd.DataFrame, t0_idx: int) -> None:
         flags = signal_flags(ind).iloc[t0_idx]
@@ -254,11 +274,10 @@ class ResolutionView:
             "markierung": " · ".join(marks),
         }
 
-    def _summary(self) -> None:
+    def _summary(self, stats: Stats) -> None:
         before = self.rnd.balance_before_cents or 0
         after = self.rnd.balance_after_cents or 0
         ui.label(f"Guthaben vorher {cents_eur(before)} → nachher {cents_eur(after)}")
-        stats = self.page.ctx.db.stats(self.user.id)
         total = fmt_points(stats.points_total)
         ui.label(f"Punkte dieser Runde: {self.rnd.points} · Punkte gesamt: {total}")
 

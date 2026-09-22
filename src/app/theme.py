@@ -47,7 +47,7 @@ def theme_for(is_dark: bool) -> Theme:
     return DARK if is_dark else LIGHT
 
 
-def page_css() -> str:
+def _tokens_css() -> str:
     return f"""
 :root {{
     --gt-bg: {LIGHT.background};
@@ -55,6 +55,7 @@ def page_css() -> str:
     --gt-text: {LIGHT.text};
     --q-primary: {LIGHT.primary};
     --q-accent: {LIGHT.accent};
+    --gt-up: {LIGHT.up};
 }}
 body.body--dark {{
     --gt-bg: {DARK.background};
@@ -62,6 +63,7 @@ body.body--dark {{
     --gt-text: {DARK.text};
     --q-primary: {DARK.primary};
     --q-accent: {DARK.accent};
+    --gt-up: {DARK.up};
 }}
 body {{
     background: var(--gt-bg);
@@ -81,4 +83,36 @@ body.body--dark .gt-card {{
     background: var(--gt-surface) !important;
     color: var(--gt-text) !important;
 }}
+.gt-selected {{
+    border: 2px solid var(--gt-up);
+    box-shadow: 0 0 0 3px rgba(34, 179, 94, .25);
+}}
 """
+
+
+def _resolution_grid_css() -> str:
+    return """
+.gt-resolution-grid {
+    display: grid;
+    width: 100%;
+    gap: 16px;
+    grid-template-columns: 1fr;
+    grid-template-areas: "tiles" "chart" "result" "next" "stats";
+}
+.gt-area-tiles { grid-area: tiles; }
+.gt-area-chart { grid-area: chart; }
+.gt-area-result { grid-area: result; }
+.gt-area-next { grid-area: next; }
+.gt-area-stats { grid-area: stats; }
+@media (min-width: 1024px) {
+    .gt-resolution-grid {
+        column-gap: 24px;
+        grid-template-columns: 64% 36%;
+        grid-template-areas: "chart tiles" "chart result" "chart next" "chart stats";
+    }
+}
+"""
+
+
+def page_css() -> str:
+    return _tokens_css() + _resolution_grid_css()

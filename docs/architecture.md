@@ -209,6 +209,25 @@ Tailwind's `flex`/`lg:flex-row` on a plain `ui.element` needs the same explicit 
 verify with a real browser (`getComputedStyle(...).flexWrap`), not just the class list, since the
 class being present doesn't guarantee it wins the cascade against Quasar's own rules.
 
+### Selected-card frame and the resolution grid (2026-09-22)
+
+Two small UI follow-ups on M6.1, both CSS-only in `theme.py`'s `page_css()` (split into
+`_tokens_css()`/`_resolution_grid_css()` to stay under the 50-line function limit):
+
+- `.gt-selected` (already applied by `DecisionView._option_card` via `card_lines`'s caller, but
+  previously undefined) now draws a `--gt-up`-colored border and glow, so the picked option card is
+  visibly marked before confirming.
+- `ResolutionView` no longer renders as one stacked column; it uses a named-area CSS Grid
+  (`.gt-resolution-grid`, areas `tiles`/`chart`/`result`/`next`/`stats`) that is single-column by
+  default and switches to `chart` (left, spanning all rows) + a `tiles → result → next → stats`
+  right column at the same ≥1024 px breakpoint as M6.1 — unlike the flex-based decision layout,
+  grid template areas control visual position independently of DOM order, so the mobile stacking
+  order (tiles, chart, table, next-round button, stats — unchanged from M6) doesn't have to match
+  the desktop visual order. `_tiles`/`_stats_card` moved from `PlayPage` methods to module-level
+  functions in `play.py` so both `PlayPage` (decision view) and `ResolutionView` can call them
+  without pyright's `reportPrivateUsage`. Manual check: headless Chromium confirmed the green frame
+  renders and the five grid areas' bounding boxes sit in two real columns at 1440 px, one at 390 px.
+
 ## Known limits
 
 - `pre-commit run --all-files` checks only files git tracks. New untracked files are formatted by

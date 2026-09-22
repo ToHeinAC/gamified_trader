@@ -94,6 +94,48 @@ async def test_decision_layout_has_desktop_breakpoint_classes(
     assert "lg:h-[720px]" in plot.classes
 
 
+async def test_picked_card_gets_selected_marker_class(gt_user: User, tmp_path: Path) -> None:
+    make_game_env(tmp_path, seed=7)
+    await gt_user.open("/")
+
+    gt_user.find(marker="pick-W10").click()
+
+    picked_btn = next(iter(gt_user.find(marker="pick-W10").elements))
+    card = picked_btn.parent_slot.parent if picked_btn.parent_slot else None
+    assert card is not None
+    assert "gt-selected" in card.classes
+
+    other_btn = next(iter(gt_user.find(marker="pick-K10").elements))
+    other_card = other_btn.parent_slot.parent if other_btn.parent_slot else None
+    assert other_card is not None
+    assert "gt-selected" not in other_card.classes
+
+
+async def test_resolution_view_uses_desktop_grid_layout(gt_user: User, tmp_path: Path) -> None:
+    make_game_env(tmp_path, seed=8)
+    await gt_user.open("/")
+    gt_user.find(marker="pick-W10").click()
+    gt_user.find(marker="confirm").click()
+
+    layout = next(iter(gt_user.find(marker="resolution-layout").elements))
+    assert "gt-resolution-grid" in layout.classes
+
+    for marker, area in (
+        ("resolution-tiles-pane", "gt-area-tiles"),
+        ("resolution-chart-pane", "gt-area-chart"),
+        ("resolution-result-pane", "gt-area-result"),
+        ("resolution-next-pane", "gt-area-next"),
+        ("resolution-stats-pane", "gt-area-stats"),
+    ):
+        pane = next(iter(gt_user.find(marker=marker).elements))
+        assert area in pane.classes
+
+    await gt_user.should_see("Guthaben:")
+    await gt_user.should_see("Punkte gesamt:")
+    await gt_user.should_see("Nächste Runde")
+    await gt_user.should_see("Optimal:")
+
+
 async def test_reload_keeps_the_round(gt_user: User, tmp_path: Path) -> None:
     cfg, _store, user_id = make_game_env(tmp_path, seed=2)
     db = Database(cfg.db_path)

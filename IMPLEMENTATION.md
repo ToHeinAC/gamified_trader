@@ -125,3 +125,9 @@ Release 1: start with [docs/spec-common.md](docs/spec-common.md), then the miles
   fixed this way (not catchable by the class-only `User`-fixture tests): Quasar's `.flex` utility
   collided with Tailwind's, wrapping the two panes despite a correct `flex-direction: row` — see
   architecture doc for the fix and the general gotcha.
+- M6.1 follow-up (2026-09-22): green selection frame for the picked option card, and a CSS-grid
+  right panel for `ResolutionView` (Guthaben/Punkte/Runde tiles, result table, "Nächste Runde",
+  Statistics) mirroring the decision view's chart-left/options-right split at ≥1024 px. Details:
+  [docs/architecture.md](docs/architecture.md#selected-card-frame-and-the-resolution-grid-2026-09-22).
+  Manual check via headless Chromium: green border/glow renders, and the resolution grid areas sit
+  in two real columns at 1440 px with no change to the 390 px stacked order.
