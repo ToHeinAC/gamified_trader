@@ -17,9 +17,11 @@ from app.db import RoundRow, Stats, UserRow
 from app.fmt import cents_eur, date_de, pct
 from app.fmt import points as fmt_points
 from app.game import (
+    BadgeTier,
     Card,
     Resolution,
     Setting,
+    badge_tier,
     card_lines,
     decision_cards,
     round_number,
@@ -34,6 +36,19 @@ from app.ui.chart_panel import chart_panel
 from app.ui.context import PageContext
 
 _CARD_GRID = "grid grid-cols-1 md:grid-cols-3 gap-4"
+
+_BADGE_ICON: dict[BadgeTier, str] = {
+    "optimal": "military_tech",
+    "gut": "trending_up",
+    "neutral": "horizontal_rule",
+    "schlecht": "trending_down",
+}
+_BADGE_LABEL: dict[BadgeTier, str] = {
+    "optimal": "Optimal!",
+    "gut": "Gut gemacht",
+    "neutral": "Neutral",
+    "schlecht": "Nicht optimal",
+}
 
 
 class PlayPage:
@@ -201,7 +216,7 @@ class ResolutionView:
         stats = self.page.ctx.db.stats(self.user.id)
 
         with ui.element("div").classes("w-full gt-resolution-grid").mark("resolution-layout"):
-            with ui.element("div").classes("gt-area-tiles").mark("resolution-tiles-pane"):
+            with ui.element("div").classes("gt-area-tiles gt-pop-in").mark("resolution-tiles-pane"):
                 _tiles(self.user, stats, self.rnd)
             self._chart_pane(data, res)
             with (
@@ -209,12 +224,20 @@ class ResolutionView:
                 .classes("gt-area-result flex flex-col gap-4")
                 .mark("resolution-result-pane")
             ):
+                self._badge(res)
                 self._table(res)
                 self._summary(stats)
             with ui.element("div").classes("gt-area-next").mark("resolution-next-pane"):
                 ui.button("Nächste Runde", on_click=self._next_round)
             with ui.element("div").classes("gt-area-stats").mark("resolution-stats-pane"):
                 _stats_card(stats)
+
+    def _badge(self, res: Resolution) -> None:
+        chosen = res.outcomes[res.chosen]
+        tier = badge_tier(neutral=res.neutral, optimal=chosen.optimal, points=chosen.points)
+        with ui.element("div").classes(f"gt-badge gt-badge-{tier}").mark("result-badge"):
+            ui.icon(_BADGE_ICON[tier])
+            ui.label(_BADGE_LABEL[tier])
 
     def _chart_pane(self, data: RoundData, res: Resolution) -> None:
         name = self.page.service.name_of(self.rnd.ticker)

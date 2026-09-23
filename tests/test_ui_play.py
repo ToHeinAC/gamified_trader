@@ -136,6 +136,26 @@ async def test_resolution_view_uses_desktop_grid_layout(gt_user: User, tmp_path:
     await gt_user.should_see("Optimal:")
 
 
+async def test_resolution_shows_result_badge(gt_user: User, tmp_path: Path) -> None:
+    make_game_env(tmp_path, seed=8)
+    await gt_user.open("/")
+    gt_user.find(marker="pick-W10").click()
+    gt_user.find(marker="confirm").click()
+
+    badge = next(iter(gt_user.find(marker="result-badge").elements))
+    tier_classes = {"gt-badge-optimal", "gt-badge-gut", "gt-badge-neutral", "gt-badge-schlecht"}
+    matched = tier_classes & set(badge.classes)
+    assert len(matched) == 1
+    tier = next(iter(matched)).removeprefix("gt-badge-")
+    label = {
+        "optimal": "Optimal!",
+        "gut": "Gut gemacht",
+        "neutral": "Neutral",
+        "schlecht": "Nicht optimal",
+    }[tier]
+    await gt_user.should_see(label)
+
+
 async def test_reload_keeps_the_round(gt_user: User, tmp_path: Path) -> None:
     cfg, _store, user_id = make_game_env(tmp_path, seed=2)
     db = Database(cfg.db_path)

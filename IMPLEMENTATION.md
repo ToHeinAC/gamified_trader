@@ -59,7 +59,7 @@ Release 1: start with [docs/spec-common.md](docs/spec-common.md), then the miles
 | `src/app/db.py` | `Database`: SQLite users/settings/resets/active-user (`data/app.db`). |
 | `src/app/ui/context.py` | `PageContext`: per-client `Config`/`Database`/theme/user name shared by pages. |
 | `src/app/ui/setup.py` | Page "Setup": create/select users, edit settings, reset balance. |
-| `src/app/game.py` | Pure: `draw_snapshot`, `Setting`, `card_lines`, `resolve`, `outcome`, `round_number` (R1–R9, D7, D9). |
+| `src/app/game.py` | Pure: `draw_snapshot`, `Setting`, `card_lines`, `resolve`, `outcome`, `round_number`, `badge_tier` (R1–R9, D7, D9). |
 | `src/app/game_service.py` | `GameService`: wires DB, pool and prices for `start_round`/`confirm`/`resolution`. |
 | `src/app/cli.py` | `gt` entry point: `data download`, `data update`, `app`, `snapshots build`. |
 | `tests/helpers.py` | Synthetic OHLCV factories (`make_bars`, `random_walk_bars`, `write_store`). |
@@ -131,3 +131,13 @@ Release 1: start with [docs/spec-common.md](docs/spec-common.md), then the miles
   [docs/architecture.md](docs/architecture.md#selected-card-frame-and-the-resolution-grid-2026-09-22).
   Manual check via headless Chromium: green border/glow renders, and the resolution grid areas sit
   in two real columns at 1440 px with no change to the 390 px stacked order.
+- M6 gamified result badge (2026-09-23): UI polish, no PRD change. `game.badge_tier` classifies the
+  chosen option's result (`optimal`/`gut`/`neutral`/`schlecht`) from `Resolution`; `ResolutionView`
+  shows it as a `.gt-badge-*` chip with a CSS pop-in (and a glow pulse for `optimal`), and the tiles
+  pane gets the same pop-in on round resolution. No count-up animation: the CSS-only pop/glow
+  approach was chosen over JS-driven number counting since NiceGUI's test simulation cannot execute
+  client JS, so a JS count-up would be unverifiable by the automated suite. Details:
+  [docs/architecture.md](docs/architecture.md#gamified-result-badge-2026-09-23). Automated
+  `test_ui_play.py::test_resolution_shows_result_badge` covers the badge; the CSS animation itself
+  needs a manual browser check (no browser available in this environment), same class of gap as
+  M6.1's screenshots.

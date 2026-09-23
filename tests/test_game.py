@@ -8,6 +8,7 @@ from app.db import UserRow
 from app.game import (
     PoolEntry,
     SnapshotBars,
+    badge_tier,
     card_lines,
     draw_snapshot,
     resolve,
@@ -186,3 +187,19 @@ def test_card_lines_einfach_no_financing() -> None:
 
 def test_wait_lines() -> None:
     assert wait_lines(30) == ["Warten 30 Tage", "Kein Einsatz, keine Kosten"]
+
+
+def test_badge_tier_optimal() -> None:
+    assert badge_tier(neutral=False, optimal=True, points=100) == "optimal"
+
+
+def test_badge_tier_gut() -> None:
+    assert badge_tier(neutral=False, optimal=False, points=50) == "gut"
+
+
+def test_badge_tier_schlecht() -> None:
+    assert badge_tier(neutral=False, optimal=False, points=49) == "schlecht"
+
+
+def test_badge_tier_neutral_overrides_points() -> None:
+    assert badge_tier(neutral=True, optimal=True, points=100) == "neutral"

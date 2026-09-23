@@ -90,6 +90,48 @@ body.body--dark .gt-card {{
 """
 
 
+def _badge_css() -> str:
+    return f"""
+.gt-badge {{
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    border-radius: 999px;
+    padding: 8px 18px;
+    font-weight: 700;
+    animation: gt-pop .4s ease-out;
+}}
+.gt-badge-optimal {{
+    background: rgba(34, 179, 94, .18);
+    color: {LIGHT.up};
+    animation: gt-pop .4s ease-out, gt-glow 1.6s ease-in-out 0.4s 2;
+}}
+.gt-badge-gut {{
+    background: rgba(31, 193, 240, .18);
+    color: {LIGHT.accent};
+}}
+.gt-badge-neutral {{
+    background: rgba(138, 147, 178, .18);
+    color: {LIGHT.muted};
+}}
+.gt-badge-schlecht {{
+    background: rgba(229, 72, 77, .18);
+    color: {LIGHT.down};
+}}
+.gt-pop-in {{
+    animation: gt-pop .35s ease-out;
+}}
+@keyframes gt-pop {{
+    from {{ transform: scale(.85); opacity: 0; }}
+    to {{ transform: scale(1); opacity: 1; }}
+}}
+@keyframes gt-glow {{
+    0%, 100% {{ box-shadow: 0 0 0 0 rgba(34, 179, 94, 0); }}
+    50% {{ box-shadow: 0 0 0 8px rgba(34, 179, 94, .18); }}
+}}
+"""
+
+
 def _resolution_grid_css() -> str:
     return """
 .gt-resolution-grid {
@@ -115,4 +157,4 @@ def _resolution_grid_css() -> str:
 
 
 def page_css() -> str:
-    return _tokens_css() + _resolution_grid_css()
+    return _tokens_css() + _badge_css() + _resolution_grid_css()

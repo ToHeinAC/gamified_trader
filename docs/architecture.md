@@ -228,6 +228,21 @@ Two small UI follow-ups on M6.1, both CSS-only in `theme.py`'s `page_css()` (spl
   without pyright's `reportPrivateUsage`. Manual check: headless Chromium confirmed the green frame
   renders and the five grid areas' bounding boxes sit in two real columns at 1440 px, one at 390 px.
 
+### Gamified result badge (2026-09-23)
+
+UI polish requested for the resolution screen, no PRD change. `game.badge_tier(*, neutral, optimal,
+points)` is a pure function (tested in isolation, not via a full `Resolution`) mapping the chosen
+option's outcome to one of four tiers: `neutral` (no option beat the reference), `optimal` (the
+chosen option was among the best), `gut` (points ≥ 50 but not optimal), `schlecht` (below 50).
+`ResolutionView._badge` renders it as a `.gt-badge-<tier>` chip (icon + German label) above the
+result table. CSS in `theme.py`'s new `_badge_css()` (split out for the 50-line limit, added to
+`page_css()`) gives every badge a pop-in animation on mount and an extra glow pulse for `optimal`;
+the resolution tiles pane also gets the pop-in class. No JS-driven number count-up: NiceGUI's test
+simulation doesn't execute client JS, so that would have been unverifiable by the automated suite —
+CSS keyframe animation was chosen instead, verified structurally by
+`test_resolution_shows_result_badge` (marker + tier class + matching label); the animation's actual
+motion still needs a manual browser check, same class of gap as M6.1's screenshots.
+
 ## Known limits
 
 - `pre-commit run --all-files` checks only files git tracks. New untracked files are formatted by

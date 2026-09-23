@@ -6,6 +6,7 @@ from collections.abc import Set as AbstractSet
 from dataclasses import dataclass
 from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
+from typing import Literal
 
 from app.db import RoundRow, UserRow
 from app.fmt import eur, pct, price, qty
@@ -263,3 +264,16 @@ def outcome(res: Resolution, fee_tenths: int, interest_tenths: int) -> RoundOutc
 
 def round_number(done_rounds: int, has_open: bool) -> int:
     return done_rounds + 1 if has_open else done_rounds
+
+
+BadgeTier = Literal["optimal", "gut", "neutral", "schlecht"]
+
+
+def badge_tier(*, neutral: bool, optimal: bool, points: int) -> BadgeTier:
+    if neutral:
+        return "neutral"
+    if optimal:
+        return "optimal"
+    if points >= 50:
+        return "gut"
+    return "schlecht"
