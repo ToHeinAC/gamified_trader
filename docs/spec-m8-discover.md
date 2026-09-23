@@ -116,16 +116,19 @@ Functions (each ≤ 50 lines, complexity ≤ 10):
 - `needs_fetch(entry: MetaEntry | None, today: date) -> bool`: `entry is None or entry.fetched < today`.
 - `completed_bars(bars, today) -> pd.DataFrame`: rows with `date < today` (drops a possibly
   incomplete candle of today and anything later), index reset.
+- `display_name(ticker) -> str`: `universe.ticker_names().get(ticker, ticker)` (no Yahoo name lookup).
 - `beats_all(meta) -> bool`: `all(meta["beats_baselines"].values())` (A25; the artifact stores a
   dict per baseline: `never`, `k120_l1`, `k120_l5`).
 - `model_matches(meta) -> bool`: `list(meta["feature_columns"]) == list(FEATURE_COLUMNS)`.
 - `needs_model_hint(user: UserRow) -> bool`: `user.lev_mid != DEFAULT_LEV_MID` or fee/interest
   tenths differ from the defaults (A22).
 - `market_fresh(market, tag0) -> bool`: `market` not None and not empty and
-  `tag0 - market.index.max() <= 5 days` (PRD M8).
+  `tag0 - market.index.max() <= pd.Timedelta(days=5)` (PRD M8). A market table newer than Tag 0 is
+  fine: `with_market` takes the latest row ≤ Tag 0.
 - `feature_row(ind, market) -> pd.DataFrame`: `with_market(compute_features(ind,
-  signal_flags(ind)).iloc[[-1]], dates=<Tag 0>, market)` — the same functions as the M7.1 training
-  (PRD M8 criterion); a 1-row frame keeps sklearn's column names.
+  signal_flags(ind)).iloc[[-1]], pd.Series([ind["date"].iloc[-1]]), market)` — the same functions as
+  the M7.1 training (PRD M8 criterion); a 1-row frame with `FEATURE_COLUMNS` keeps sklearn's column
+  names. Tag 0 is always `ind["date"].iloc[-1]`.
 - `quantiles_for(models, row) -> dict[(L, H), (p25, p50, p75)]`: `ml.predict_quantiles(models, row)`,
   unwrapped to floats for row 0.
 - `top_features(meta, row, pool_features) -> list[FeatureInfo]`: the first `TOP_FEATURES` keys of
@@ -178,7 +181,8 @@ def load_pool_features(cfg: Config) -> pd.DataFrame | None    # module level, te
    cached bars with `stale=True`; no cache → `DiscoverError(f"Keine Kursdaten für {ticker} gefunden.")`.
 3. Quote type: tickers in `universe.ticker_names()` are `"EQUITY"` without a call. Otherwise reuse
    `entry.quote_type` if not None, else call `yahoo.fetch_quote_type(ticker)` once per history fetch.
-4. Return `Loaded(completed_bars(bars, today), ...)`. Empty after `completed_bars` → `DiscoverError`.
+4. Return `Loaded(completed_bars(bars, today), ...)`. Empty after `completed_bars` →
+   `DiscoverError(f"Keine abgeschlossenen Kerzen für {ticker}.")`.
 
 `analyze(ticker)`: `loaded = self.load(ticker)`; `ind = with_indicators(loaded.bars)`;
 `discover.analyze(ticker, ind, loaded.quote_type, load_bundle(cfg), load_market(cfg),
@@ -192,10 +196,13 @@ returns None if `model.joblib` or `model.json` is missing; `load_market` returns
 `market.parquet` is missing (`model_store.read_market`); `load_pool_features` returns None if
 `features.parquet` is missing (then `top_features` percentiles are None, not an error).
 
-**Market table refresh.** `gt data download` and `gt data update` end with
-`model_store.write_market(market.market_frame(store.tickers(), store.read), cfg.market_parquet)` and
-print one report line ("Markttabelle bis {date}"). This keeps Entdecken's market features as current
-as the price store without retraining.
+**Market table refresh.** A helper `cli._refresh_market(cfg) -> None` runs at the end of
+`_data_download` and `_data_update` (after the sync report is printed, before returning the exit
+code): if `store.tickers()` is empty it does nothing (`market_frame` can't concat zero tickers);
+otherwise `model_store.write_market(market.market_frame(store.tickers(), store.read),
+cfg.market_parquet)` and print `f"Markttabelle bis {date_de(last)}"`. On the full store this adds
+≈ 15 s to `gt data update`. It keeps Entdecken's market features as current as the price store
+without retraining.
 
 ### 2.5 `chart.py`
 
@@ -209,8 +216,10 @@ def build_discover_figure(window: pd.DataFrame, theme: Theme, ticker: str, name:
 ```
 
 - The trace builders already read `x` from `window["x"]`, so dates flow through unchanged.
-- Rangebreaks remove non-trading days so candles stay contiguous: `{"bounds": ["sat", "mon"]}` plus
-  `{"values": [...]}` = business days in `[first, last]` that have no bar (holidays), as ISO strings.
+- Rangebreaks remove days without a bar so candles stay contiguous: one rangebreak
+  `{"values": [...]}` with every calendar day in `[first, last]` that has no bar, as ISO date
+  strings (weekends and holidays; ≈ 550 values for 5 years). No `bounds=["sat", "mon"]`: crypto and
+  some FX tickers have weekend bars, which a weekend bound would hide.
 - `preset_ranges` becomes date-aware: if `window["x"]` is datetime, x range =
   `(vis.x.iloc[0] - 12 h, vis.x.iloc[-1] + 12 h)` as ISO strings; otherwise unchanged. y range logic
   is shared. Existing game figures keep relative x and all M2/M6 leak tests stay green.
@@ -236,9 +245,14 @@ Page structure (same card/tile style as M6, two panes at `lg` as in M6.1):
 +---------------------------------------+  +---------------------------------------+
 ```
 
-- `ui.input(autocomplete=suggestions(load_universe()))`; Enter or "Laden" triggers the load.
+- `ui.input(autocomplete=suggestions(load_universe()))`; Enter (`.on("keydown.enter", …)`) or
+  "Laden" triggers the load. Both verified in the `User` simulation (2026-09-23, NiceGUI 3.17.1).
+- The page builds one `DiscoverService(ctx.cfg)` and reads `ctx.active_user()` on every load (settings
+  may have changed in Setup meanwhile).
+- The 6-row table shows per (L, H): `ml.growth_score(q)`, P25, P50, P75; the recommended row is marked.
 - The load runs off the event loop: `await run.io_bound(service.analyze, ticker)` (NiceGUI's
-  `run`). While it runs, the button is disabled and a spinner shows.
+  `run`; works in the `User` simulation, verified). While it runs, the button is disabled and a
+  spinner shows. Results are rendered into a `ui.column` that is cleared before each load.
 - Status → German text (constants in `ui/discover.py`):
 
 | Case | Text |
@@ -268,6 +282,9 @@ attributes: `yahoo.fetch_history`, `yahoo.fetch_quote_type`, `discover_service.l
 fake `ModelBundle` uses constant predictors (like `test_ml_recommend._FakeModel`) and a meta dict
 with `feature_columns`, `importance`, `beats_baselines`, `growth_model` and `growth_baselines` — no
 sklearn training in M8 tests. A fake market table is a small frame with `MARKET_COLUMNS`.
+UI tests wait for the `run.io_bound` result with `await user.should_see(text, retries=30)` (verified
+pattern); type with `user.find(marker="ticker-input").type("AAPL")`, then click "Laden" or
+`.trigger("keydown.enter")`.
 
 | File | Test | Asserts |
 |---|---|---|
@@ -290,7 +307,7 @@ sklearn training in M8 tests. A fake market table is a small frame with `MARKET_
 | | pool untouched | after `load` of a new ticker, `PriceStore(cfg.prices_dir).tickers()` is unchanged and `cli.main(["snapshots", "build", ...])` pool tickers exclude it |
 | | bundle cache | `load_bundle` twice → joblib loaded once; after touching `model.json` (new mtime) → reloaded |
 | `test_yahoo.py` (extend) | `fetch_quote_type` | fake `yf.Ticker` with `info={"quoteType": "etf"}` → `"ETF"`; raising `info` → None; `fetch_history` returns the single ticker's frame or None |
-| `test_chart.py` (extend) | discover figure | x values are dates; title has ticker and name; rangebreaks contain the weekend bounds and a removed holiday; preset "3M" sets the x range to the last 63 bars' dates ± 12 h; game `build_figure` output is unchanged (existing leak test still green) |
+| `test_chart.py` (extend) | discover figure | x values are dates; title has ticker and name; rangebreak values contain a weekend day and a removed weekday (holiday), and no day that has a bar; a 7-day-a-week series gets no rangebreak values; preset "3M" sets the x range to the last 63 bars' dates ± 12 h; game `build_figure` output is unchanged (existing leak test still green) |
 | `test_ui_discover.py` | page | nav link present; disclaimer visible before and after a load |
 | | invalid input | `"../x"` → „Ungültiges Tickersymbol.", zero adapter calls |
 | | unknown ticker | fake history None → „Keine Kursdaten …" and no chart |
@@ -299,22 +316,36 @@ sklearn training in M8 tests. A fake market table is a small frame with `MARKET_
 
 Budget: the new tests add ≤ 5 s to the suite (no training, bars ≤ 1,600).
 
-## 4. Steps
+## 4. Steps (plan for the implementer)
 
-1. First, a minimal `User` test that awaits `run.io_bound` on a trivial function. If the simulation
-   can't run it, stop and report (same rule as the M2 socket-block risk); don't replace it silently
-   with a blocking call.
-2. `discover.py` pure functions and `analyze` (red → green).
-3. `yahoo.py` additions, `discover_store.py` (red → green).
-4. `discover_service.py` with cache, fallback and bundle caching (red → green).
-5. `chart.py` discover figure and date-aware presets (red → green; rerun all chart/leak tests).
-6. `ui/discover.py`, `root.py` link (red → green).
-7. Gate, docs: IMPLEMENTATION.md module map and phase row, `docs/architecture.md` M8 data flow,
-   README usage line.
-8. Manual (needs network): `uv run gt app`, load 5 real tickers — AAPL, SAP.DE, a non-universe stock
-   (e.g. a small cap outside the indices), SPY (ETF → not-equity hint), and an invalid symbol.
-   Time cold and warm loads (≤ 5 s / ≤ 1 s). Stop the app via "App beenden". Note results in
-   IMPLEMENTATION.md §4.
+Read only [spec-common.md](spec-common.md) and this file; open the PRD only for a cited rule. Set the
+M8 row in IMPLEMENTATION.md to `in progress` first. Each step: write the tests of §3 for that step,
+run them and see them fail for the stated reason, implement, run them green, then
+`uv run pyright && uv run ruff check .` before the next step. Keep a red/green list for the summary.
+Never run `ruff format .` on the whole repo (it rewrites Markdown code blocks); format single files.
+
+| # | Step | Red reason | Verify |
+|---|---|---|---|
+| 1 | `config.discover_dir`; `discover.py` constants, `Status`, dataclasses, pure helpers (`normalize_ticker`, `display_name`, `needs_fetch`, `completed_bars`, `beats_all`, `model_matches`, `needs_model_hint`, `market_fresh`) | ImportError | `uv run pytest tests/test_discover.py tests/test_config.py` |
+| 2 | `discover.py` `feature_row`, `quantiles_for`, `top_features`, `analyze`, `recommendation_card` | ImportError / AttributeError | `tests/test_discover.py` all green; spy test proves the M7.1 feature path |
+| 3 | `yahoo.fetch_history`, `yahoo.fetch_quote_type`; `discover_store.py` | AttributeError / ImportError | `tests/test_yahoo.py tests/test_discover_store.py` |
+| 4 | `discover_service.py`: `load`, `analyze`, `load_bundle`/`load_market`/`load_pool_features` with mtime-keyed `lru_cache` | ImportError | `tests/test_discover_service.py` incl. "pool untouched" |
+| 5 | `cli._refresh_market` after `data download`/`update` | assertion (no `market.parquet`) | `tests/test_cli_data.py` |
+| 6 | `chart.discover_window`, `build_discover_figure`, date-aware `preset_ranges` | AttributeError | `tests/test_chart.py` plus the untouched M2/M6 leak tests |
+| 7 | `ui/discover.py`, link and sub page in `ui/root.py` | route/marker missing | `tests/test_ui_discover.py`, all `tests/test_ui_*.py` |
+| 8 | Gate | — | `uv run pre-commit run --all-files`; suite ≤ 60 s (check `--durations=10` if close) |
+| 9 | Docs | — | IMPLEMENTATION.md (phase row, module map, §4 notes), `docs/architecture.md` M8 data flow, README usage line; `uv run pytest tests/test_docs.py` |
+| 10 | Manual (network, see below) | — | results in IMPLEMENTATION.md §4 |
+
+Manual check: `uv run gt data update` (prints "Markttabelle bis …"), then `uv run gt app` and load
+AAPL, SAP.DE, a stock outside the universe, SPY (ETF → not-equity hint) and `../x` (invalid). Time
+cold and warm loads (budget ≤ 5 s / ≤ 1 s). Measured 2026-09-23 without network: model load 0.16 s
+(warm OS cache; 0.8 s cold), features 0.06 s, predict + percentiles 0.05 s — Yahoo dominates the
+cold path. A headless browser check of the two-pane layout is optional (Playwright was used for
+M6.1). Stop the app with "App beenden", never by port.
+
+Report at the end: red/green list, gate result, manual results, every decision the spec didn't cover.
+Don't commit; the user runs `/commit-git`.
 
 ## 5. Pitfalls
 
@@ -327,7 +358,7 @@ Budget: the new tests add ≤ 5 s to the suite (no training, bars ≤ 1,600).
 - `PriceStore.path` only rejects `/`; `normalize_ticker` is the real guard against odd file names.
 - Keep `decision_window` untouched; the discover chart gets its own window builder. The M2/M6 leak
   tests must stay green without edits.
-- `ml._QuantileModel` is private; rename it to `QuantileModel` (public) instead of importing a
-  private name across modules (pyright `reportPrivateUsage`).
+- Import `ml.QuantileModel` (public since M7.1) for `ModelBundle`; never import `_`-names across
+  modules (pyright `reportPrivateUsage`).
 - Don't import sklearn in `discover.py`: the bundle's models only need `.predict`; `joblib.load`
   stays in `model_store.read_model`.
