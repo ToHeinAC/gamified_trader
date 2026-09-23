@@ -1,8 +1,8 @@
 # PRD — Gamified Trader (Trading-Lern-App)
 
-> Stand: v0.3 vom 2026-09-22. v0.1 wurde aus der diktierten Produktbeschreibung erstellt und per
-> grill-me verfeinert; die Entscheidungen stehen in §5. Release 1 (M1–M6, M6.1) ist umsetzungsreif.
-> M7–M9 sind vorläufig: vor M7 folgt eine eigene PRD-Iteration mit den offenen Punkten A19 und A20.
+> Stand: v0.4 vom 2026-09-23. v0.1 wurde aus der diktierten Produktbeschreibung erstellt und per
+> grill-me verfeinert; die Entscheidungen stehen in §5. Release 1 (M1–M6, M6.1) ist umgesetzt.
+> v0.4 klärt A19 und A20 und detailliert M7–M9 (Regeln R12–R14).
 > Phasenstand: [IMPLEMENTATION.md](IMPLEMENTATION.md).
 
 ## 1. Problem & goal
@@ -21,8 +21,8 @@ die Runden messbar steigt.
 |---|---|---|
 | Spielmodus | Historischer Chart ohne Ticker, 1 von 6 Optionen wählen, Auflösung mit Punkten und Buchung | Release 1: M1–M4, M6 |
 | Setup-/Maintenance-Modus | Nutzer, Startkapital, Reset, Hebel, Zins- und Gebührensatz | Release 1: M5 |
-| Entdeckungsmodus | Beliebige Yahoo-Aktie, aktueller Chart, ML-gestützte Empfehlung (Horizont, Hebel) | Release 2: M7–M8 (vorläufig) |
-| Lernmodus | Signalwissen, interaktives Setup-Labor, Feature Importance des Modells | Release 3: M9 (vorläufig) |
+| Entdeckungsmodus | Beliebige Yahoo-Aktie, aktueller Chart, ML-gestützte Empfehlung (Horizont, Hebel) | Release 2: M7–M8 |
+| Lernmodus | Signalwissen, interaktives Setup-Labor, Feature Importance des Modells | Release 3: M9 |
 
 ### Begriffe
 
@@ -103,8 +103,8 @@ die Runden messbar steigt.
 
 **Lizenzen**
 - Nur Apache-2.0-kompatible Abhängigkeiten: nicegui (MIT), plotly (MIT), yfinance (Apache-2.0),
-  pandas, numpy, scikit-learn (BSD-3), pyarrow (Apache-2.0). Jede neue Abhängigkeit wird vor Aufnahme
-  geprüft.
+  pandas, numpy, scikit-learn und joblib (BSD-3), pyarrow (Apache-2.0). Jede neue Abhängigkeit wird
+  vor Aufnahme geprüft.
 
 **Prozess**
 - Umsetzung durch Claude Code (Sonnet, effort medium), ein Meilenstein je Phase. Dieses PRD ist
@@ -233,6 +233,47 @@ z = 5 % p. a.; soweit nicht anders angegeben öffnet Tag 1 bei E = 100,00:
 - K30 Einfach ohne Auslösung, C_30 = 103 → P&L = 60 − 40 = +20 € → V = +0,2 %.
 - Punkte: V(K10, K30, K120) = (+1,2 %, −1,0 %, +2,0 %), also V(W10, W30, W120) = (−1,2 %, +1,0 %,
   −2,0 %). V\* = 2,0 % → K120: 100, K10: 60, W30: 50, alle anderen: 0.
+
+### Fachregeln R12–R14 (Release 2 und 3, normativ)
+
+**R12 Features.** Eine reine Funktion berechnet je Kerze t aus den Kerzen ≤ t (kausal, skalenfrei)
+genau diese 29 Features in dieser Reihenfolge; zu kurze Historie oder Nenner 0 → leerer Wert (NaN).
+C, H, L, V = Schluss, Hoch, Tief, Volumen; Indikatoren nach R1.
+- `ret_5`, `ret_20`, `ret_60`, `ret_120`, `ret_250`: C_t / C_{t−n} − 1.
+- `dist_sma50` = C/SMA50 − 1; `dist_sma200` = C/SMA200 − 1; `sma_ratio` = SMA50/SMA200 − 1;
+  `slope_sma50`, `slope_sma200` = SMA_t / SMA_{t−20} − 1.
+- `rsi` = RSI14; `rsi_chg5` = RSI_t − RSI_{t−5}.
+- `bb_pctb` = (C − unten)/(oben − unten); `bb_width` = (oben − unten)/Mitte; `bb_width_rank` = Anteil
+  der letzten 126 Werte von `bb_width` (inklusive t), die ≤ dem Wert an t sind.
+- `vol_rel` = V_t / SMA20 des Volumens bis t − 1 (wie VOLUME_SPIKE).
+- `atr_pct` = ATR14/C; `vola20` = Standardabweichung (ddof = 0) der letzten 20 Tagesrenditen C_t/C_{t−1} − 1.
+- `dist_high252` = C / max(H über die letzten 252 Kerzen) − 1; `dist_low252` = C / min(L …) − 1.
+- die 9 Flags aus R11 als 0/1.
+
+**R13 Empfehlung** (A19). Das Modell sagt je L ∈ {1, 5, 10} und H ∈ {10, 30, 120} die Quantile
+P25, P50, P75 von V(K_H) mit Standardkosten voraus; je (L, H) werden die drei Werte aufsteigend
+sortiert (keine Quantil-Kreuzung).
+- Bestes Paar = größtes P25 der neun Paare; bei Gleichstand kleineres L, dann kleineres H.
+- P25 > 0 → Empfehlung K_H auf der Stufe zu L (1 = Einfach, 5 = Mittel, 10 = Profi).
+- Sonst → Empfehlung W_H, Stufe Einfach, mit H = argmin P50(L = 1, H); bei Gleichstand kleineres H.
+- Angezeigte Spanne: P25/P50/P75 des Paars; bei W die gespiegelten Werte −P75/−P50/−P25 von
+  K_H bei L = 1.
+
+**R14 Validierung.** Die Snapshots werden nach t0 sortiert; die jüngeren 50 % bilden den
+Testzeitraum, geteilt in 4 gleich große, zeitlich aufeinanderfolgende Blöcke (Folds).
+- Training für Fold k: alle Snapshots mit `t_end` < kleinstes t0 des Blocks k, wobei `t_end` = Datum
+  der Kerze Tag 0 + 120 (Embargo: kein Zukunftsfenster reicht in den Test).
+- Realisiertes V einer Empfehlung: K_H bei L → `v_l{L}_h{H}`; W_H → −`v_l1_h{H}`. Punkte nach R8
+  gegen V\* derselben Stufe.
+- Baselines auf denselben Snapshots: „immer K120 Einfach"; „häufigstes Label" (häufigstes
+  `label_l1` ohne NEUTRAL im Trainingsteil, Stufe Einfach); „Zufall" (eine der sechs Optionen
+  gleichverteilt, Stufe Einfach, fester Seed). Diagnose ohne Einfluss auf das Erfolgsmaß: „Modell nur
+  Einfach" (R13 auf L = 1 beschränkt).
+- Erfolgsmaß (A25): `beats_baselines` = Ø V des Modells über alle Testfolds > Ø V jeder der drei
+  Baselines.
+- Quantil-Abdeckung je (L, H): Anteil der Test-V ≤ P25 bzw. ≤ P75 (Soll 25 % bzw. 75 %).
+- Permutation Importance: die P50-Modelle für L = 1, letzter Fold, 5 Wiederholungen, Pinball-Loss,
+  gemittelt über die drei Horizonte.
 
 ### M1 — Kursdaten und Universum
 - **Deliverable:**
@@ -450,57 +491,112 @@ z = 5 % p. a.; soweit nicht anders angegeben öffnet Tag 1 bei E = 100,00:
   Options-Bereich nicht künstlich; sie wachsen proportional mit.
 - **Dependencies:** M5, M6.
 
-### M7 — Features und ML-Modell (vorläufig)
-- **Deliverable:** kausale, skalenfreie Features je Snapshot in `data/features.parquet`; Training und
-  Evaluation per `gt model train`; Modellartefakt mit Metadaten (Featureliste, Trainingszeitraum,
-  Metriken, Seed) unter `data/models/`; globale Feature Importance (Permutation Importance auf den
-  Testdaten).
-  - Startliste Features: Renditen über 5/20/60/120/250 Tage; Abstand des Kurses zu SMA50 und SMA200;
-    Verhältnis SMA50/SMA200; Steigung von SMA50 und SMA200 über 20 Tage; RSI14 und seine Änderung über
-    5 Tage; Bollinger %B, Bandbreite und deren Perzentil über 126 Tage; Volumen relativ zu SMA20 des
-    Volumens; ATR14 in %; 20-Tage-Volatilität; Abstand zum 252-Tage-Hoch und -Tief; Signalflags (R11).
-  - Modell: scikit-learn HistGradientBoosting mit den Zielen `v_l{L}_h{H}`.
-- **Acceptance criteria (vorläufig):**
-  - Kausalitätstest wie in M2 für alle Features.
-  - Walk-forward-Validierung mit ≥ 4 Folds und einem Embargo von 120 Kerzen: kein Trainings-Snapshot,
-    dessen [Tag 0, Tag 0 + 120] in den Testzeitraum reicht (Test).
-  - Bericht vergleicht die Empfehlung mit den Baselines „immer K120 Einfach", „häufigstes Label" und
-    „Zufall" über Ø V und Ø Punkte auf den Testfolds.
-  - Reproduzierbar mit festem Seed.
-- **Edge cases:** leere Featurewerte bei kurzer Historie → vom Modell direkt verarbeitet (NaN-fähig),
-  dokumentiert.
+### M7 — Features und ML-Modell
+- **Deliverable:**
+  - Reine Featurefunktion nach R12 (eine Zeile je Kerze).
+  - CLI `gt model train [--seed 42]`: berechnet die Features aller Pool-Snapshots an Tag 0 und schreibt
+    `data/features.parquet` (`snapshot_id`, `t0`, `t_end`, 29 Features); trainiert je L, H und
+    q ∈ {0,25; 0,5; 0,75} einen `HistGradientBoostingRegressor(loss="quantile")` auf `v_l{L}_h{H}`
+    (27 Modelle, feste Hyperparameter im Code, ohne Early Stopping, `random_state` = Seed); validiert
+    nach R14; trainiert zuletzt auf allen Snapshots neu.
+  - Artefakt `data/models/model.joblib` (die 27 Modelle) und `data/models/model.json` (Featureliste,
+    Hyperparameter, Seed, Trainingszeitraum, Datenstand des Pools, Metriken je Fold, Baselines,
+    `beats_baselines`, Quantil-Abdeckung, Permutation Importance), atomar geschrieben. Die CLI gibt
+    einen Bericht mit denselben Kennzahlen aus.
+  - Neue Abhängigkeit scikit-learn (`uv add scikit-learn`).
+- **Acceptance criteria:**
+  - Jedes Feature stimmt auf einer festen Fixture mit handgerechneten Werten überein (Toleranz 1e-9).
+  - Kausalität (Property-Test wie in M2) für alle 29 Features.
+  - Kurze Historie (< 250 Kerzen) → `ret_250` und `dist_high252` leer, kein Fehler; konstante Kurse →
+    `bb_pctb` leer, `bb_width` = 0; Volumen-SMA 0 → `vol_rel` leer.
+  - Konsistenz: für eine Stichprobe von Pool-Zeilen ist die Zeile in `features.parquet` identisch mit
+    der Featurefunktion an Tag 0 auf der vollen Kursreihe.
+  - Embargo-Test: je Fold gilt max `t_end` (Training) < min t0 (Test); Test-Blöcke sind disjunkt und
+    zeitlich geordnet.
+  - R13 als reine Funktion mit festen Quantil-Arrays getestet: K-Empfehlung bei P25 > 0; W mit argmin
+    P50 sonst; beide Gleichstandsregeln; Sortierung gekreuzter Quantile.
+  - Baselines, Punkte und `beats_baselines` auf einem synthetischen Pool mit bekannten Werten getestet.
+  - Determinismus: gleicher Pool, gleiche Kurse, gleicher Seed → identische Metriken und Vorhersagen.
+  - End-to-End auf synthetischem Pool (N ≤ 200); Tests dürfen die Iterationszahl der Modelle senken.
+  - Pool-Datei fehlt → Hinweis auf `gt snapshots build`, Exit-Code ≠ 0.
+  - Manuell: Training auf dem vollen Pool ≤ 15 min; Bericht (Baselines, `beats_baselines`,
+    Abdeckung, Top-10 Importance) in IMPLEMENTATION.md notiert.
+- **Edge cases:** leere Featurewerte → vom Modell direkt verarbeitet (NaN-fähig). Ein Fold ohne
+  Trainingsdaten (Embargo, zu kleiner Pool) → Abbruch mit Meldung. Pool neu gebaut → altes Modell
+  bleibt gültig lesbar, M8 zeigt dessen Datenstand.
 - **Dependencies:** M4.
 
-### M8 — Entdeckungsmodus (vorläufig)
-- **Deliverable:** Seite „Entdecken": Ticker-Eingabe mit Suche; Chart wie R2, aber mit echtem Datum und
-  Ticker, Tag 0 = letzter Handelstag. ML-Empfehlung: Option (K oder W, Horizont) und Stufe, dazu SL, TP,
-  Positionsgröße und Kosten nach R4/R5 für das aktuelle B, Modell-Konfidenz und die wichtigsten
-  Einflussgrößen. Dauerhaft sichtbarer Hinweis „Lern-App, keine Anlageberatung".
-- **Acceptance criteria (vorläufig):**
-  - Unbekannter Ticker → verständliche Meldung, kein Absturz. Weniger als 250 Kerzen → Chart ohne
-    Empfehlung.
-  - Kurse werden je Ticker höchstens einmal pro Tag neu geladen (Cache).
-  - Die Empfehlung nutzt nur Kerzen bis Tag 0 und dieselbe Featurefunktion wie das Training (Test).
-  - Schlägt das Modell im M7-Bericht die Baselines nicht, zeigt die Seite das deutlich an.
-- **Edge cases:** Ticker ist keine Aktie (z. B. ETF, Krypto) → Umgang wird mit A19 festgelegt.
-- **Dependencies:** M7.
+### M8 — Entdeckungsmodus
+- **Deliverable:** Seite „Entdecken" in der Navigation.
+  - Eingabefeld mit Vorschlägen aus `universe.csv` (Ticker und Name); jeder andere Yahoo-Ticker ist
+    frei eingebbar (getrimmt, großgeschrieben).
+  - Kurse im eigenen Cache `data/discover/<TICKER>.parquet` mit `data/discover/meta.json`
+    (Abrufdatum und Wertpapiertyp je Ticker), nie in `data/prices/` (A21). Neu geladen wird je Ticker
+    höchstens einmal pro Kalendertag. Tag 0 = letzte Kerze vor dem heutigen Datum.
+  - Chart wie R2, aber mit Kalenderdatum auf der x-Achse und dem Ticker im Titel.
+  - Empfehlung nach R13 mit dem M7-Modell: Option und Stufe; Karte nach R4/R5 für das aktuelle B, den
+    Hebel der Stufe und g, z des Nutzers; P25/P50/P75 der Empfehlung und eine Tabelle aller neun
+    (L, H); die 5 wichtigsten Features (globale Importance) mit aktuellem Wert und Perzentil im Pool.
+  - Hinweise: dauerhaft „Lern-App, keine Anlageberatung"; bei `beats_baselines` = falsch deutlich
+    „Das Modell schlägt die einfachen Vergleichsstrategien nicht"; weichen L_mittel, L_profi, g oder z
+    von 5, 10, 2 %, 5 % ab: „Modell mit Hebel 1/5/10 und Standardkosten trainiert, die Karte nutzt
+    Ihre Werte" (A22).
+  - Keine Buchung, keine Punkte, keine Speicherung von Empfehlungen.
+- **Acceptance criteria:**
+  - Unbekannter Ticker oder leere Antwort → verständliche Meldung, kein Absturz (`User`-Fixture,
+    gemockter Adapter).
+  - Weniger als 250 Kerzen → Chart ohne Empfehlung, mit Hinweis.
+  - Wertpapiertyp ≠ Aktie (Yahoo `quoteType` ≠ EQUITY) oder Typ nicht ermittelbar → Chart ohne
+    Empfehlung, Hinweis „Modell nur auf Aktien trainiert". Universum-Ticker brauchen keine Abfrage.
+  - Cache: zweiter Aufruf am selben Tag ohne Netzaufruf, am Folgetag genau ein Abruf (gemockter
+    Adapter, gefälschte Uhr). Eine Kerze mit heutigem Datum wird verworfen.
+  - Die Empfehlung nutzt nur Kerzen bis Tag 0 und dieselbe Featurefunktion wie M7 (Test).
+  - Modell fehlt oder seine Featureliste passt nicht → Chart ohne Empfehlung, Hinweis auf
+    `gt model train`.
+  - Disclaimer immer sichtbar; Hinweis bei `beats_baselines` = falsch sichtbar (Tests).
+  - `gt snapshots build` liest `data/discover/` nicht (Test).
+  - Manuell: 5 echte Ticker, davon 1 ETF; Antwort ≤ 5 s bei kaltem, ≤ 1 s bei warmem Cache.
+- **Edge cases:** Yahoo-Fehler oder Rate-Limit → Meldung; vorhandene Cache-Daten werden mit
+  Datenstand angezeigt. Kein Nutzer → Karte ohne Positionsgröße, Hinweis auf Setup.
+- **Dependencies:** M5, M7.
 
-### M9 — Lernmodus (vorläufig)
-- **Deliverable:**
-  - Signal-Bibliothek: je Indikator und Signal-Ereignis eine Erklärung (Allgemeinwissen) plus Statistik
-    aus dem Pool: Häufigkeit, Verteilung der optimalen Optionen, Ø V je Option im Vergleich zur
-    Grundrate, Beispielcharts.
-  - Setup-Labor (interaktiv): Signalfilter, SL-Multiplikator, CRV, Risiko je Trade, Stufe, Horizont und
-    Kosten wählen → Simulation über die passenden Pool-Snapshots → Trefferquote, Erwartungswert,
-    Verteilung von V, Kapitalkurve.
-  - Feature Importance aus M7 mit verständlicher Erklärung.
-- **Acceptance criteria (vorläufig):**
-  - Alle Statistiken sind reproduzierbar aus dem Pool berechnet (Test mit synthetischem Pool).
-  - Das Labor nutzt die Simulationsfunktion aus M3, keine zweite Implementierung.
-  - Jede Signalseite erklärt den Unterschied zwischen Einzelfall (Spielrunde) und Erwartungswert
-    (Statistik).
-- **Edge cases:** Signalfilter ohne Treffer → Hinweis statt leerer Grafik.
-- **Dependencies:** M4, M7.
+### M9 — Lernmodus
+- **Deliverable:** Seite „Lernen" mit drei Bereichen.
+  - Signal-Bibliothek: je Indikator (SMA, Bollinger, RSI, ATR, Volumen) und je Ereignis aus R11 eine
+    Seite mit Text nach A20, dazu die Seite „Einzelfall und Erwartungswert" (Hindsight, Survivorship
+    Bias, Stichprobengröße). Ereignisseiten zeigen Statistik aus dem Pool (L = 1): Anteil der
+    Snapshots mit dem Ereignis, Verteilung von `label_l1` gegenüber allen Snapshots, Ø V je Option
+    gegenüber allen Snapshots (Grundrate), jeweils mit Anzahl. Beispielcharts: bis zu 3 bereits
+    aufgelöste Runden des aktiven Nutzers mit dem Ereignis (A23).
+  - Setup-Labor: Signalfilter (Mehrfachauswahl, UND-verknüpft, leer = alle), SL-Faktor k (0,5–6,0,
+    Schritt 0,5, Default k_H), CRV (1,0–4,0, Schritt 0,5, Default 2), Risiko ρ (0,5–5,0 %, Schritt 0,5,
+    Default 1 %), Hebel 1–20, Horizont 10/30/120, g und z (Bereiche wie M5). Simulation über die
+    passenden Pool-Snapshots (A24): höchstens 1.000, mit festem Seed gezogen, Anzahl angezeigt; je
+    Snapshot ein Trade mit B = 10.000 €. Ergebnis: Trefferquote (Anteil P&L > 0), Ø V, Median V,
+    Histogramm von V, Anteile der Exit-Gründe, Kapitalkurve (Trades nach t0 nacheinander gebucht nach
+    R9 ab 10.000 €, mit Hinweis, dass zeitlich überlappende Trades die Kurve idealisieren).
+  - Feature Importance aus `model.json` als Balkendiagramm mit einem erklärenden Satz je Feature,
+    dazu die Baseline-Tabelle und `beats_baselines`.
+  - `make_card` erhält optionale Parameter für k, CRV und ρ; die Defaults sind die Werte aus R4/R5.
+- **Acceptance criteria:**
+  - Zu jedem Indikator, jedem Ereignis, der Seite „Einzelfall und Erwartungswert" und den Features
+    existiert ein Text; ein Test schlägt bei einem fehlenden fehl (mit Test für den Detektor).
+  - Die Texte sind vom Nutzer fachlich abgenommen (manuell, notiert in IMPLEMENTATION.md).
+  - Alle Statistiken reproduzierbar aus dem Pool (Test mit synthetischem Pool und bekannten Werten).
+  - Das Labor nutzt `make_card`/`simulate` aus M3: mit Default-Parametern, L ∈ {1, 5, 10} und
+    Standardkosten ergibt es für jeden Snapshot genau `v_l{L}_h{H}` des Pools (Test). Alle M3-Tests
+    bleiben unverändert grün.
+  - Leck-Test (`User`-Fixture, Nutzer ohne Runden): kein Ticker, Name, Datum oder Zukunftsverlauf
+    eines ungespielten Snapshots wird angezeigt.
+  - Gleiche Eingaben → gleiche Stichprobe und gleiche Ergebnisse.
+  - Jede Signalseite erklärt den Unterschied zwischen Einzelfall (Spielrunde) und Erwartungswert.
+  - Modell fehlt → der Bereich Feature Importance zeigt einen Hinweis auf `gt model train`;
+    Bibliothek und Labor funktionieren weiter.
+  - Manuell: Labor mit 1.000 Snapshots ≤ 5 s bei warmem Cache.
+- **Edge cases:** Signalfilter ohne Treffer → Hinweis statt leerer Grafik. Weniger als 1.000 Treffer →
+  alle. Kleiner SL-Faktor → d wird nach R4 auf 1 % geklemmt. Preisdatei fehlt → Snapshot übersprungen
+  und gezählt.
+- **Dependencies:** M4, M6 (gespielte Runden), M7 (Importance).
 
 ## 5. Open risks & assumptions
 
@@ -532,13 +628,24 @@ Die Regeln in §4 setzen diese Entscheidungen um; bei Widerspruch gilt §4.
 - **A17** Alle Beträge in €, ohne Umrechnung; gerechnet wird mit prozentualen Kursänderungen.
 - **A18** Datenpflege nur per CLI (M5).
 
-### Offen (vor M7 in eigener grill-me-Runde klären)
+### Entscheidungen der PRD-Iteration v0.4 (2026-09-23)
 
-- **A19 Empfehlungslogik im Entdeckungsmodus.** Ein reines Erwartungswertmodell empfiehlt bei
-  positivem Erwartungswert immer den höchsten Hebel. Vorschlag: risikoadjustierte Hebelwahl (z. B.
-  halbes Kelly aus vorhergesagtem Mittel und Streuung). Offen ist auch der Umgang mit Nicht-Aktien.
-- **A20 Lerninhalte** („Common Knowledge") werden bei der Umsetzung formuliert und vom Nutzer
-  fachlich abgenommen; Umfang und Form sind offen.
+- **A19 Empfehlung** über das pessimistische Quantil statt über den Erwartungswert: gewählt wird das
+  (L, H) mit dem größten vorhergesagten P25 von V, sodass ein höherer Hebel nur gewinnt, wenn auch
+  der ungünstige Fall besser wird (R13). Halbes Kelly und „immer Einfach" wurden verworfen.
+  Nicht-Aktien: Chart ja, Empfehlung nein (M8).
+- **A20 Lerninhalte** als deutsche Markdown-Dateien unter `src/app/resources/learn/`: je Indikator
+  (5) und Ereignis aus R11 (9) eine Seite mit 150–300 Wörtern, dazu „Einzelfall und Erwartungswert"
+  und ein Satz je Feature aus R12. Claude formuliert sie in M9, der Nutzer nimmt sie im Diff ab.
+- **A21** Entdecken nutzt einen eigenen Kurs-Cache (`data/discover/`), damit Pool und die reine
+  CLI-Datenpflege (A18) unberührt bleiben; die möglicherweise unvollständige heutige Kerze entfällt.
+- **A22** Das Modell kennt nur die Pool-Stufen L = 1/5/10 mit Standardkosten; die Karte in Entdecken
+  rechnet mit den Werten des Nutzers und weist auf Abweichungen hin.
+- **A23** Beispielcharts im Lernmodus stammen nur aus bereits gespielten Runden des Nutzers; sonst
+  würde die Bibliothek den Ausgang späterer Spielrunden verraten.
+- **A24** Setup-Labor: Stichprobe ≤ 1.000 Snapshots, jeder Trade mit B = 10.000 €; die Kapitalkurve
+  bucht sequenziell und ist als idealisiert gekennzeichnet.
+- **A25** Erfolgsmaß des Modells: Ø V über alle Testfolds gegen jede der drei Baselines (R14).
 
 ### Risiken
 
@@ -554,6 +661,8 @@ Die Regeln in §4 setzen diese Entscheidungen um; bei Widerspruch gilt §4.
 - **Data Leakage im ML** durch überlappende Zukunftsfenster. Mitigation: Zeitsplit mit Embargo und
   Kausalitätstests (M7).
 - **Keine echte Vorhersagekraft** des Modells. Mitigation: Baseline-Vergleich und deutliche Anzeige (M8).
+- **Modellartefakt per joblib (Pickle)** kann beim Laden Code ausführen. Mitigation: nur die selbst
+  erzeugte Datei unter `GT_DATA_DIR` laden, nie fremde Modelldateien.
 - **pyright strict mit pandas, plotly, yfinance** (unvollständige Typen) erzeugt Reibung für den
   Umsetzer. Mitigation: `pandas-stubs`, untypisierte Bibliotheken nur in Adaptern und im Chart-Modul,
   gezielte `# pyright: ignore[...]` mit Begründung. Trigger: > 10 Ignores in einem Modul → Regel mit
