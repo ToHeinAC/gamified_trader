@@ -29,6 +29,7 @@ the PRD and was approved by the user on 2026-09-22.
 | D11 | Theme storage | `nicegui_app.storage.general["dark_mode"]` (server-side JSON file under `GT_DATA_DIR/nicegui`). No storage secret is needed. |
 | D12 | Property tests | Seeded `numpy.random.default_rng` loops, no Hypothesis: Hypothesis is MPL-2.0, which AGENTS.md §5.5 doesn't list. |
 | D13 | `gt data update` after a split or dividend | Approved 2026-09-22. With `auto_adjust=True`, Yahoo re-adjusts old prices, so appended rows could sit on a different adjustment basis than the stored history. `update` fetches from the last stored date inclusive; if that day's close changed by more than 0.5 %, it reloads the ticker's full history. Details: [M1 §2.4](spec-m1-data.md). |
+| D14 | Untyped-library header (M7) | `ml.py` and `model_store.py` ship no stubs for scikit-learn/joblib, same root cause as M2's plotly and M1's yahoo module. Extended the header convention (§4) to these two modules; each names its own reason and cites this row. |
 
 ## 2. Dependencies
 
@@ -116,8 +117,9 @@ def load_config(env: Mapping[str, str] | None = None) -> Config: ...   # None ->
 **Typing (pyright strict in `src/`)**
 
 - pandas is typed through `pandas-stubs`. NiceGUI ships types.
-- plotly and yfinance ship no stubs. Only `chart.py` and `yahoo.py` may use them, and each starts with
-  exactly this header (verified to give 0 errors):
+- plotly, yfinance, scikit-learn and joblib ship no stubs. Only `chart.py`, `yahoo.py`, `ml.py` and
+  `model_store.py` may use them (D14), and each starts with a header of this shape (verified to give
+  0 errors for plotly/yfinance; scikit-learn/joblib need two more flags, see `ml.py`):
 
 ```python
 # pyright: reportMissingTypeStubs=false, reportUnknownMemberType=false, reportUnknownVariableType=false, reportUnknownArgumentType=false

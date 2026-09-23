@@ -28,6 +28,18 @@ class Config:
     def db_path(self) -> Path:
         return self.data_dir / "app.db"
 
+    @property
+    def features_parquet(self) -> Path:
+        return self.data_dir / "features.parquet"
+
+    @property
+    def model_path(self) -> Path:
+        return self.data_dir / "models" / "model.joblib"
+
+    @property
+    def model_meta_path(self) -> Path:
+        return self.data_dir / "models" / "model.json"
+
 
 def load_config(env: Mapping[str, str] | None = None) -> Config:
     source = os.environ if env is None else env

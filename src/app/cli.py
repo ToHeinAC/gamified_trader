@@ -6,7 +6,7 @@ import time
 from collections.abc import Mapping, Sequence
 from typing import cast
 
-from app import data_sync, pool, pool_store, yahoo
+from app import data_sync, ml, model_store, pool, pool_store, yahoo
 from app.config import Config, load_config
 from app.price_store import PriceStore
 from app.universe import load_universe
@@ -82,6 +82,43 @@ def _snapshots_build(args: argparse.Namespace) -> int:
     return 0
 
 
+def _render_model_report(metadata: Mapping[str, object]) -> str:
+    period = cast(list[str], metadata["period"])
+    baselines = cast(dict[str, float], metadata["mean_v_baselines"])
+    beats = cast(dict[str, bool], metadata["beats_baselines"])
+    coverage = cast(dict[str, dict[str, float]], metadata["quantile_coverage"])
+    importance = cast(dict[str, float], metadata["importance"])
+
+    lines = [
+        f"Snapshots: {metadata['n_snapshots']} (seed {metadata['seed']})",
+        f"Zeitraum: {period[0]} - {period[1]}",
+        f"Ø V Modell: {cast(float, metadata['mean_v_model']):.4f}",
+    ]
+    for name, value in baselines.items():
+        lines.append(f"Ø V Baseline {name}: {value:.4f} (geschlagen: {beats[name]})")
+    lines.append(f"Ø Punkte: {cast(float, metadata['mean_points']):.1f}")
+    for key, stats in coverage.items():
+        lines.append(f"Abdeckung {key}: P25={stats['p25']:.2f} P75={stats['p75']:.2f}")
+    lines.append("Top-10 Feature Importance:")
+    for feature, score in list(importance.items())[:10]:
+        lines.append(f"  {feature}: {score:.5f}")
+    return "\n".join(lines)
+
+
+def _model_train(args: argparse.Namespace) -> int:
+    cfg = load_config()
+    if not cfg.snapshots_parquet.exists():
+        print("Kein Pool gefunden. Zuerst `gt snapshots build` ausführen.")
+        return 1
+    store = PriceStore(cfg.prices_dir)
+    pool_df = pool_store.read_pool(cfg.snapshots_parquet)
+    result = ml.train(pool_df, store.read, args.seed)
+    model_store.write_features(result.features, cfg.features_parquet)
+    model_store.write_model(result.models, result.metadata, cfg.model_path, cfg.model_meta_path)
+    print(_render_model_report(result.metadata))
+    return 0
+
+
 def _cmd_app(cfg: Config) -> int:
     storage = cfg.data_dir / "nicegui"
     storage.mkdir(parents=True, exist_ok=True)  # NiceGUI's own mkdir has no parents=True
@@ -120,6 +157,13 @@ def _build_parser() -> argparse.ArgumentParser:
     build_parser.add_argument("--n", type=int, default=50_000)
     build_parser.add_argument("--seed", type=int, default=42)
     build_parser.set_defaults(func=_snapshots_build)
+
+    model_parser = subparsers.add_parser("model", help="ML-Modell verwalten")
+    model_subparsers = model_parser.add_subparsers(dest="model_command", required=True)
+
+    train_parser = model_subparsers.add_parser("train", help="Modell trainieren")
+    train_parser.add_argument("--seed", type=int, default=42)
+    train_parser.set_defaults(func=_model_train)
 
     return parser
 
