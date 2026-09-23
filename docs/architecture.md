@@ -243,6 +243,35 @@ CSS keyframe animation was chosen instead, verified structurally by
 `test_resolution_shows_result_badge` (marker + tier class + matching label); the animation's actual
 motion still needs a manual browser check, same class of gap as M6.1's screenshots.
 
+## M7 features and ML model
+
+```
+gt model train -> cli.py -> ml.py: train
+                                |         \
+                     build_feature_frame   features.py (compute_features, R12)
+                     (groups by ticker,          |
+                      one load per ticker)  time_folds (R14 embargo)
+                                |                 |
+                     train_all (27 models:   _evaluate_fold (per fold: recommend, R13,
+                     HistGradientBoosting     baselines, quantile coverage)
+                     per L, H, quantile)           |
+                                |            _importance_report (permutation, P50/L=1)
+                                \                  /
+                              model_store.py (features.parquet, model.joblib + model.json)
+```
+
+`train` reuses `pool.py`'s "group by ticker, load once" pattern for `build_feature_frame`. Validation
+(R14) walks forward over the newer 50 % of snapshots in 4 contiguous blocks; a fold's training set
+excludes any snapshot whose 120-bar future window reaches into that block (embargo via `t_end`, the
+ticker's own bar date at `t0 + 120`, not a calendar offset). The three baselines and the
+recommendation's realized value/points reuse `trading.py`'s `points`/`option_values` shape directly —
+no second scoring implementation. `HistGradientBoostingRegressor`'s `max_iter` is a parameter (default
+100) so tests can lower it to stay inside the 60 s suite budget; production keeps the default.
+scikit-learn and joblib ship no type stubs, so `ml.py` and `model_store.py` carry the same
+header-pragma pattern as M1's `yahoo.py`/M2's `chart.py` (D14 in
+[spec-common.md](spec-common.md)). Full spec and the manual full-pool run:
+[spec-m7-model.md](spec-m7-model.md), [IMPLEMENTATION.md](../IMPLEMENTATION.md#4-open-issues).
+
 ## Known limits
 
 - `pre-commit run --all-files` checks only files git tracks. New untracked files are formatted by

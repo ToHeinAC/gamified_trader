@@ -10,6 +10,8 @@ Rules: [AGENTS.md](AGENTS.md). Design: [docs/architecture.md](docs/architecture.
 | Install (once per clone) | `uv sync && uv run pre-commit install` |
 | Tests (fast loop) | `uv run pytest` or `uv run pytest tests/test_chart.py` |
 | Kursdaten laden/aktualisieren | `uv run gt data download` / `uv run gt data update` |
+| Snapshot-Pool bauen | `uv run gt snapshots build --n 50000 --seed 42` |
+| ML-Modell trainieren | `uv run gt model train --seed 42` |
 | App starten | `uv run gt app` (port `GT_PORT`, default 8537) |
 | Full gate | `uv run pre-commit run --all-files` |
 
@@ -28,9 +30,9 @@ Release 1: start with [docs/spec-common.md](docs/spec-common.md), then the miles
 | 5 | M5: Persistenz und Setup-Modus | done | acceptance tests M5, full gate green | [M5](docs/spec-m5-setup.md) |
 | 6 | M6: Spielmodus | done | acceptance tests M6, full gate green | [M6](docs/spec-m6-game.md) |
 | 6b | M6.1: Desktop-Layout | done | acceptance tests M6.1, full gate green | PRD §4 M6.1 |
-| 7 | M7: Features und ML-Modell (preliminary) | planned | after PRD iteration | — |
-| 8 | M8: Entdeckungsmodus (preliminary) | planned | after PRD iteration | — |
-| 9 | M9: Lernmodus (preliminary) | planned | after PRD iteration | — |
+| 7 | M7: Features und ML-Modell | done | acceptance tests M7, full gate green | [M7](docs/spec-m7-model.md) |
+| 8 | M8: Entdeckungsmodus | planned | after M7 | — |
+| 9 | M9: Lernmodus | planned | after M7 | — |
 
 ## 3. Module map
 
@@ -68,6 +70,9 @@ Release 1: start with [docs/spec-common.md](docs/spec-common.md), then the miles
 | `tests/test_docs.py` | Enforces doc size limits and resolvable local links. |
 | `.claude/hooks/format_on_edit.py` | PostToolUse hook: ruff-formats each `.py` file Claude edits. |
 | `.claude/hooks/stop_gate.py` | Stop hook: runs the gate if `.py` files changed; blocks the stop on failure. |
+| `src/app/features.py` | `compute_features`: 29 causal ML features per bar (R12). |
+| `src/app/ml.py` | `recommend` (R13), `time_folds`, baselines, `build_feature_frame`, `train` (R14). |
+| `src/app/model_store.py` | `data/features.parquet` and `data/models/model.joblib`/`model.json` read/write. |
 
 ## 4. Open issues
 
@@ -131,6 +136,26 @@ Release 1: start with [docs/spec-common.md](docs/spec-common.md), then the miles
   [docs/architecture.md](docs/architecture.md#selected-card-frame-and-the-resolution-grid-2026-09-22).
   Manual check via headless Chromium: green border/glow renders, and the resolution grid areas sit
   in two real columns at 1440 px with no change to the 390 px stacked order.
+- M7 (2026-09-23): PRD v0.4 settled A19–A25 (risk-adjusted recommendation via pessimistic quantiles,
+  learning content as Markdown files) and added R12–R14; implemented per
+  [spec-m7-model.md](docs/spec-m7-model.md), no deviations from that spec. `HistGradientBoostingRegressor`
+  needs `max_iter` lowered in tests to stay inside the 60 s suite budget (spec §5); production code
+  keeps the sklearn default (100) via a parameter, not a global change.
+- M7 pyright (D14 in [spec-common.md](docs/spec-common.md)): scikit-learn and joblib ship no type
+  stubs, the same root cause as M1's yahoo.py and M2's chart.py. Extended the header-pragma
+  convention to `ml.py` (two extra flags: `reportUnknownVariableType`, `reportUnknownArgumentType`,
+  because sklearn's own partial type hints — not just missing stubs — leak through) and to
+  `model_store.py` (joblib only).
+- M7 manual check (2026-09-23): `uv run gt model train --seed 42` on the full pool (50,000 snapshots,
+  2000-01-03 to 2026-03-31) took 55 s (budget ≤ 15 min). Ø V model 0.0048 vs. baselines: beats
+  "immer K120 Einfach" (0.0005) and "Zufall" (−0.0000), does **not** beat "häufigstes Label" (0.0052)
+  — `beats_baselines` is therefore mixed, not unanimous. Quantile coverage is well calibrated (P25
+  ≈ 0.23–0.28, P75 ≈ 0.74–0.77 against targets 0.25/0.75). Permutation importance is small and flat
+  across features (top: `dist_low252`, `rsi`, `dist_high252`, all ≤ 0.00004 pinball-loss reduction),
+  i.e. the model captures little beyond what the simple label baseline already gets from market
+  drift. M8's PRD-mandated hint ("Das Modell schlägt die einfachen Vergleichsstrategien nicht") must
+  therefore show for at least one baseline; Gesamtprodukt DoD's "Modell schlägt Baselines, oder die
+  UI weist klar darauf hin" is met via that hint, not via unanimously beating all three baselines.
 - M6 gamified result badge (2026-09-23): UI polish, no PRD change. `game.badge_tier` classifies the
   chosen option's result (`optimal`/`gut`/`neutral`/`schlecht`) from `Resolution`; `ResolutionView`
   shows it as a `.gt-badge-*` chip with a CSS pop-in (and a glow pulse for `optimal`), and the tiles
