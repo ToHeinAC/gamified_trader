@@ -277,6 +277,49 @@ and `model_store.py` carry the header-pragma pattern of `yahoo.py`/`chart.py` (D
 [spec-common.md](spec-common.md)). Specs: [M7](spec-m7-model.md), [M7.1](spec-m7-1-improve.md);
 results: [IMPLEMENTATION.md](../IMPLEMENTATION.md#4-open-issues).
 
+## M8 Entdeckungsmodus
+
+```
+GET /entdecken -> ui/discover.py: DiscoverPage
+                        |
+                  ticker_input.type + Enter/Laden -> normalize_ticker (discover.py, pure)
+                        |
+                  run.io_bound(service.analyze) -> discover_service.py: DiscoverService
+                        |                                |         \
+                  DiscoverStore (data/discover/)   load_bundle  load_market  load_pool_features
+                  meta.json: fetched date,         (mtime-cached model_store reads)
+                  quote type per ticker                  |
+                        |                                |
+                  yahoo.fetch_history (one try,           |
+                  no retry) / cache fallback               |
+                        |                                  |
+                  discover.completed_bars -> with_indicators -> discover.analyze
+                                                                        |
+                                                          feature_row = with_market(compute_features(...))
+                                                          ml.predict_quantiles -> ml.recommend (R13)
+                                                                        |
+                        chart.discover_window / build_discover_figure  recommendation_card (game.setting_for,
+                        (real dates, rangebreaks for missing days)      trading.make_card, R9 lock check)
+```
+
+`data/discover/` is a second `PriceStore` root, so the cache never touches `data/prices/` (A21) —
+`gt snapshots build` and `gt model train` only ever list `cfg.prices_dir`. A ticker's security type
+is looked up once via `yf.Ticker(...).info` and cached in `meta.json`; universe tickers skip the
+lookup entirely (`quoteType` is always `EQUITY` there). `gt data download`/`update` rewrite
+`data/market.parquet` from the current price store after syncing, so a recommendation's market
+features stay current without a retrain; `discover.market_fresh` refuses a recommendation (not the
+chart) if that table is more than 5 days older than the ticker's last bar. The recommendation reuses
+M7.1's exact feature and quantile-prediction path (`features.compute_features`/`with_market`,
+`ml.predict_quantiles`, `ml.recommend`), and the position-size card reuses M6's
+`game.setting_for`/`trading.make_card` — no second implementation of either. The chart gets its own
+window builder (`chart.discover_window`) that keeps real calendar dates and adds Plotly rangebreaks
+for every day without a bar (not just weekends, since crypto/FX tickers can have weekend bars);
+`chart.decision_window`/`resolution_window` and their leak tests are untouched. Model, market and
+pool-feature files are cached per `(path, mtime_ns)` (`functools.lru_cache`, mirroring
+`game_service._load_pool_entries`), so a retrain invalidates the cache automatically. Spec:
+[M8](spec-m8-discover.md); manual network check pending, see
+[IMPLEMENTATION.md](../IMPLEMENTATION.md#4-open-issues).
+
 ## Known limits
 
 - `pre-commit run --all-files` checks only files git tracks. New untracked files are formatted by

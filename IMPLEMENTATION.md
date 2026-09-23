@@ -32,7 +32,7 @@ Release 1: start with [docs/spec-common.md](docs/spec-common.md), then the miles
 | 6b | M6.1: Desktop-Layout | done | acceptance tests M6.1, full gate green | PRD §4 M6.1 |
 | 7 | M7: Features und ML-Modell | done | acceptance tests M7, full gate green | [M7](docs/spec-m7-model.md) |
 | 7b | M7.1: Modellverbesserung | done | acceptance tests M7.1, full gate green | [M7.1](docs/spec-m7-1-improve.md) |
-| 8 | M8: Entdeckungsmodus | planned | acceptance tests M8, full gate green | [M8](docs/spec-m8-discover.md) |
+| 8 | M8: Entdeckungsmodus | done | acceptance tests M8, full gate green | [M8](docs/spec-m8-discover.md) |
 | 9 | M9: Lernmodus | planned | after M7 | — |
 
 ## 3. Module map
@@ -48,8 +48,8 @@ Release 1: start with [docs/spec-common.md](docs/spec-common.md), then the miles
 | `src/app/resources/universe.csv` | 668-row ticker universe; built once, see [docs/data.md](docs/data.md). |
 | `src/app/indicators.py` | `with_indicators`: SMA, Bollinger, Wilder RSI/ATR (R1). |
 | `src/app/theme.py` | `LIGHT`/`DARK` design tokens, `page_css()`. |
-| `src/app/chart.py` | `decision_window`/`resolution_window` (leak-proof, drop `date`), `build_figure`, `build_resolution_figure`, `add_preview`, presets (R2). |
-| `src/app/ui/root.py` | App shell: header, theme resolution, routing (`root()`, `run_app()`). |
+| `src/app/chart.py` | `decision_window`/`resolution_window` (leak-proof, drop `date`), `discover_window`/`build_discover_figure` (real dates, M8), `build_figure`, `build_resolution_figure`, `add_preview`, presets (R2). |
+| `src/app/ui/root.py` | App shell: header, theme resolution, routing (`root()`, `run_app()`); links Spielen/Entdecken/Setup. |
 | `src/app/ui/chart_panel.py` | `ui.plotly` panel from a figure factory; optional preset buttons. |
 | `src/app/ui/play.py` | Page "Spielen": `PlayPage`/`DecisionView`/`ResolutionView`, the full round loop. |
 | `src/app/trading.py` | `make_card(s)`, `simulate(_all)`, `option_values`/`points`/`label`/`book`: R3–R9, pure Decimal math. |
@@ -64,7 +64,7 @@ Release 1: start with [docs/spec-common.md](docs/spec-common.md), then the miles
 | `src/app/ui/setup.py` | Page "Setup": create/select users, edit settings, reset balance. |
 | `src/app/game.py` | Pure: `draw_snapshot`, `Setting`, `card_lines`, `resolve`, `outcome`, `round_number`, `badge_tier` (R1–R9, D7, D9). |
 | `src/app/game_service.py` | `GameService`: wires DB, pool and prices for `start_round`/`confirm`/`resolution`. |
-| `src/app/cli.py` | `gt` entry point: `data download`, `data update`, `app`, `snapshots build`. |
+| `src/app/cli.py` | `gt` entry point: `data download`/`update` (also refresh `market.parquet`), `app`, `snapshots build`, `model train`. |
 | `tests/helpers.py` | Synthetic OHLCV factories (`make_bars`, `random_walk_bars`, `write_store`). |
 | `tests/conftest.py` | Shared fixtures; blocks network access in all tests. |
 | `tests/test_code_rules.py` | Enforces functions ≤ 50 lines in `src/`, `tests/`, `.claude/hooks/`. |
@@ -75,6 +75,10 @@ Release 1: start with [docs/spec-common.md](docs/spec-common.md), then the miles
 | `src/app/features.py` | `compute_features` (29 stock features), `with_market` (+6 market, +2 relative = 37, R12). |
 | `src/app/ml.py` | `recommend` (growth rule, R13), `time_folds`, growth metrics/baselines, `build_feature_frame`, `train` (R14). |
 | `src/app/model_store.py` | `data/features.parquet`, `data/market.parquet`, `data/models/model.joblib`/`model.json` read/write. |
+| `src/app/discover.py` | Pure M8 rules: ticker check, cache freshness, `analyze` (R13 on the last completed bar), `recommendation_card`. |
+| `src/app/discover_store.py` | `DiscoverStore`: `data/discover/<TICKER>.parquet` + `meta.json` (fetch date, quote type). |
+| `src/app/discover_service.py` | `DiscoverService`: Yahoo fetch-or-cache, mtime-cached model/market/pool-feature loaders. |
+| `src/app/ui/discover.py` | Page "Entdecken": ticker input, chart, recommendation card, quantile table, top features, hints. |
 
 ## 4. Open issues
 
@@ -186,3 +190,33 @@ Release 1: start with [docs/spec-common.md](docs/spec-common.md), then the miles
   `test_ui_play.py::test_resolution_shows_result_badge` covers the badge; the CSS animation itself
   needs a manual browser check (no browser available in this environment), same class of gap as
   M6.1's screenshots.
+- M8 (2026-09-23): implemented per [spec-m8-discover.md](docs/spec-m8-discover.md), no deviations
+  from the spec's own decisions. Page "Entdecken" caches Yahoo history under `data/discover/`
+  (never touching `data/prices/`, verified by a test that runs `gt snapshots build` afterward and
+  checks the new ticker is absent), falls back to cached data with a "veraltet" hint on a failed
+  fetch, and shows the R13 growth recommendation with a position-size card for the active user.
+  `gt data download`/`update` now also rewrite `data/market.parquet` so Entdecken stays current
+  without a retrain. One fix during implementation: `ui/discover.py` initially imported
+  `discover_service.load_bundle` by name, which would have made the `discover_service.load_bundle`
+  monkeypatch target from the spec's test plan invisible to the UI (the same "call module.func(),
+  don't import func by name" rule as spec-common.md's CLI recipe) — changed to a module-qualified
+  call before writing the UI tests.
+- M8 pyright/ruff: 0 errors on the first implementation pass for every new module; no new
+  `# pyright: ignore` needed (`discover.py`/`discover_service.py` avoid sklearn entirely, per the
+  spec's pitfall list). `ruff` flagged literal en dashes in the German hint texts
+  (`RUF001`, ambiguous-unicode); switched to `–` escapes, matching `settings_rules.py`'s
+  existing convention for the same character.
+- M8 manual check (2026-09-23): automated coverage is full (`test_ui_discover.py` covers the nav
+  link, invalid input, an unknown ticker, the OK path with chart and recommendation, every hint,
+  and the Enter key). Network access turned out to be available in this environment, so the PRD's
+  network-dependent step ran for real via `DiscoverService.analyze` directly (no browser available,
+  same fallback as M6's "60 rounds via `GameService` directly"): `uv run gt data update` refreshed
+  all 667 tickers and printed "Markttabelle bis 23.09.2026"; then AAPL (cold 1.08 s / warm 0.09 s),
+  SAP.DE (0.39 s / 0.07 s), CELH — a stock outside `universe.csv` (1.14 s / 0.06 s, `quote_type`
+  correctly resolved to `EQUITY` via a real `yf.Ticker(...).info` call), SPY (1.51 s / 0.01 s,
+  correctly `NOT_EQUITY`, no recommendation), and `../x` (rejected by `normalize_ticker` before any
+  network call). All cold/warm timings are inside the ≤ 5 s/≤ 1 s budget. `data/discover/` held
+  exactly the 4 fetched tickers plus `meta.json` afterward; `data/prices/` stayed at 667 tickers,
+  confirming A21. The two-pane layout itself (CSS/visual) still needs a real or headless browser,
+  which this environment doesn't have (same class of gap as M6.1's screenshots); the automated
+  `test_ui_discover.py::test_ok_path_shows_recommendation_and_chart` covers its structure.
