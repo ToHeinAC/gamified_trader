@@ -1,73 +1,85 @@
-"""Tests for app.ml.recommend and predict_quantiles (PRD R13)."""
+"""Tests for app.ml.recommend and predict_quantiles (PRD R13 v0.6)."""
 
+import math
 from collections.abc import Mapping
 
 import numpy as np
 import pandas as pd
 import pytest
 
-from app.ml import predict_quantiles, recommend
+from app.ml import LEVELS, growth_score, predict_quantiles, recommend
 from app.trading import Level, OptionCode
+
+NEG = (-0.05, 0.0, 0.03)  # G < 0: mean(ln 0.95, 0, ln 1.03)
 
 
 def _quantiles(
     overrides: Mapping[tuple[int, int], tuple[float, float, float]],
 ) -> dict[tuple[int, int], tuple[float, float, float]]:
-    base = {(lev, h): (-0.05, 0.0, 0.05) for lev in (1, 5, 10) for h in (10, 30, 120)}
+    base = {(lev, h): NEG for lev in (1, 5) for h in (10, 30, 120)}
     base.update(overrides)
     return base
 
 
-def test_k_wins_with_positive_p25() -> None:
-    q = _quantiles({(5, 30): (0.01, 0.05, 0.10)})
+def test_growth_score_formula_and_floor() -> None:
+    assert growth_score((0.0, 0.02, 0.05)) == pytest.approx(
+        (math.log(1.0) + math.log(1.02) + math.log(1.05)) / 3
+    )
+    assert growth_score((-1.5, 0.0, 0.0)) == pytest.approx(math.log(0.01) / 3)
+
+
+def test_buy_when_growth_positive() -> None:
+    q = _quantiles({(5, 30): (0.0, 0.02, 0.05)})
     rec = recommend(q)
     assert rec.option == OptionCode.K30
     assert rec.level == Level.MITTEL
-    assert rec.p25 == pytest.approx(0.01)
-    assert rec.p50 == pytest.approx(0.05)
-    assert rec.p75 == pytest.approx(0.10)
+    assert (rec.p25, rec.p50, rec.p75) == pytest.approx((0.0, 0.02, 0.05))
+    assert rec.growth == pytest.approx(growth_score((0.0, 0.02, 0.05)))
+
+
+def test_buy_even_if_p25_negative() -> None:
+    q = _quantiles({(1, 120): (-0.01, 0.02, 0.04)})
+    rec = recommend(q)
+    assert rec.option == OptionCode.K120
+    assert rec.level == Level.EINFACH
 
 
 def test_tie_break_prefers_smaller_leverage() -> None:
-    q = _quantiles({(5, 30): (0.02, 0.05, 0.10), (10, 30): (0.02, 0.06, 0.11)})
-    rec = recommend(q)
-    assert rec.level == Level.MITTEL
-    assert rec.option == OptionCode.K30
-
-
-def test_tie_break_prefers_smaller_horizon_after_leverage() -> None:
-    q = _quantiles({(1, 10): (0.02, 0.03, 0.04), (1, 30): (0.02, 0.05, 0.10)})
+    q = _quantiles({(1, 120): (0.01, 0.02, 0.03), (5, 120): (0.01, 0.02, 0.03)})
     rec = recommend(q)
     assert rec.level == Level.EINFACH
-    assert rec.option == OptionCode.K10
+    assert rec.option == OptionCode.K120
 
 
-def test_wait_when_all_p25_non_positive() -> None:
+def test_tie_break_prefers_smaller_horizon() -> None:
+    q = _quantiles({(1, 10): (0.01, 0.02, 0.03), (1, 30): (0.01, 0.02, 0.03)})
+    assert recommend(q).option == OptionCode.K10
+
+
+def test_wait_when_no_positive_growth() -> None:
     q = _quantiles(
         {
             (1, 10): (-0.01, 0.02, 0.05),
-            (1, 30): (-0.02, -0.01, 0.03),
-            (1, 120): (-0.03, 0.04, 0.09),
+            (1, 30): (-0.02, -0.01, 0.01),
+            (1, 120): (-0.10, 0.04, 0.05),
         }
     )
+    assert growth_score((-0.01, 0.02, 0.05)) > 0  # sanity: (1, 10) would buy ...
+    q[(1, 10)] = (-0.06, 0.02, 0.03)  # ... so make it negative too
     rec = recommend(q)
     assert rec.option == OptionCode.W30
     assert rec.level == Level.EINFACH
-    assert rec.p25 == pytest.approx(-0.03)
-    assert rec.p50 == pytest.approx(0.01)
-    assert rec.p75 == pytest.approx(0.02)
+    assert (rec.p25, rec.p50, rec.p75) == pytest.approx((-0.01, 0.01, 0.02))
+    assert rec.growth == pytest.approx(growth_score((-0.02, -0.01, 0.01)))
 
 
-def test_wait_tie_break_prefers_smaller_horizon() -> None:
-    q = _quantiles({(1, 10): (-0.01, 0.0, 0.01), (1, 30): (-0.02, 0.0, 0.02)})
-    rec = recommend(q)
-    assert rec.option == OptionCode.W10
-
-
-def test_p25_exactly_zero_is_not_positive() -> None:
+def test_growth_exactly_zero_waits() -> None:
     q = _quantiles({(1, 10): (0.0, 0.0, 0.0)})
-    rec = recommend(q)
-    assert rec.option.value.startswith("W")
+    assert recommend(q).option.value.startswith("W")
+
+
+def test_only_levels_one_and_five() -> None:
+    assert LEVELS == (1, 5)
 
 
 class _FakeModel:

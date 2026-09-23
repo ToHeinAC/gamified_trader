@@ -1,8 +1,11 @@
-"""Pure ML features per bar (PRD R12). Causal: row t uses only bars <= t."""
+"""Pure ML features (PRD R12): 29 per-bar stock features plus market and relative features.
+
+Causal: row t uses only data <= t."""
 
 import numpy as np
 import pandas as pd
 
+from app.market import MARKET_COLUMNS
 from app.signals import EVENTS
 
 RET_WINDOWS = (5, 20, 60, 120, 250)
@@ -35,7 +38,9 @@ NUMERIC_FEATURES = (
     "dist_high252",
     "dist_low252",
 )
-FEATURE_COLUMNS = NUMERIC_FEATURES + tuple(f"sig_{event}" for event in EVENTS)
+STOCK_FEATURES = NUMERIC_FEATURES + tuple(f"sig_{event}" for event in EVENTS)
+RELATIVE_FEATURES = ("rs_60", "rs_250")
+FEATURE_COLUMNS = STOCK_FEATURES + MARKET_COLUMNS + RELATIVE_FEATURES
 
 
 def _percentile_rank(window: np.ndarray[tuple[int], np.dtype[np.float64]]) -> float:
@@ -75,4 +80,22 @@ def compute_features(ind: pd.DataFrame, flags: pd.DataFrame) -> pd.DataFrame:
         out["dist_low252"] = close / low_ext - 1
         for event in EVENTS:
             out[f"sig_{event}"] = flags[f"sig_{event}"].astype("float64")
-    return out[list(FEATURE_COLUMNS)]
+    return out[list(STOCK_FEATURES)]
+
+
+def with_market(stock: pd.DataFrame, dates: pd.Series, market: pd.DataFrame) -> pd.DataFrame:
+    """`stock` rows align positionally with `dates`. Joins the latest market row <= each date and
+    adds the relative features. Returns FEATURE_COLUMNS in the input row order."""
+    left = stock.reset_index(drop=True).assign(
+        _date=pd.DatetimeIndex(dates.to_numpy()).astype("datetime64[ns]"),
+        _pos=np.arange(len(stock)),
+    )
+    right = market.reset_index().rename(columns={"date": "_date"})
+    right["_date"] = right["_date"].astype("datetime64[ns]")
+    merged = pd.merge_asof(
+        left.sort_values("_date", kind="stable"), right, on="_date", direction="backward"
+    )
+    merged = merged.sort_values("_pos").reset_index(drop=True)
+    merged["rs_60"] = merged["ret_60"] - merged["mkt_ret_60"]
+    merged["rs_250"] = merged["ret_250"] - merged["mkt_ret_250"]
+    return merged[list(FEATURE_COLUMNS)]

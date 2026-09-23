@@ -1,8 +1,9 @@
+import functools
 from pathlib import Path
 
 import pytest
 
-from app import cli
+from app import cli, ml
 from tests.helpers import random_walk_bars, write_store
 
 
@@ -14,15 +15,18 @@ def test_train(
     frames = {t: random_walk_bars(1600, seed=i, start_price=50.0) for i, t in enumerate(tickers)}
     write_store(tmp_path / "prices", frames)
     assert cli.main(["snapshots", "build", "--n", "60", "--seed", "1"]) == 0
+    monkeypatch.setattr(ml, "train", functools.partial(ml.train, max_iter=10))  # suite budget
 
     code = cli.main(["model", "train", "--seed", "1"])
 
     assert code == 0
     assert (tmp_path / "features.parquet").exists()
+    assert (tmp_path / "market.parquet").exists()
     assert (tmp_path / "models" / "model.joblib").exists()
     assert (tmp_path / "models" / "model.json").exists()
     out = capsys.readouterr().out
-    assert "Ø V Modell" in out
+    assert "Wachstum Modell" in out
+    assert "Spiel-Sicht" in out
 
 
 def test_train_no_pool(

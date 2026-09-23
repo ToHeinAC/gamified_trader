@@ -4,8 +4,9 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from app.features import FEATURE_COLUMNS, compute_features
+from app.features import FEATURE_COLUMNS, STOCK_FEATURES, compute_features, with_market
 from app.indicators import with_indicators
+from app.market import MARKET_COLUMNS
 from app.signals import EVENTS, signal_flags
 from tests.helpers import make_bars, random_walk_bars
 
@@ -17,8 +18,10 @@ def _features_for(bars: pd.DataFrame) -> pd.DataFrame:
 
 
 def test_feature_columns_count() -> None:
-    assert len(FEATURE_COLUMNS) == 29
-    assert len(set(FEATURE_COLUMNS)) == 29
+    assert len(STOCK_FEATURES) == 29
+    assert len(FEATURE_COLUMNS) == 37
+    assert len(set(FEATURE_COLUMNS)) == 37
+    assert FEATURE_COLUMNS[:29] == STOCK_FEATURES
 
 
 def test_hand_computed_values() -> None:
@@ -53,7 +56,7 @@ def test_causality(seed: int) -> None:
 
     row_full = full.iloc[t]
     row_trunc = truncated.iloc[t]
-    for col in FEATURE_COLUMNS:
+    for col in STOCK_FEATURES:
         a, b = row_full[col], row_trunc[col]
         if pd.isna(a) and pd.isna(b):
             continue
@@ -98,3 +101,36 @@ def test_sig_columns_are_float_flags() -> None:
     for event in EVENTS:
         col = feats[f"sig_{event}"]
         assert set(col.dropna().unique().tolist()) <= {0.0, 1.0}
+
+
+def _market(dates: list[str], ret_60: list[float]) -> pd.DataFrame:
+    mkt = pd.DataFrame(
+        {col: [float(i) for i in range(len(dates))] for col in MARKET_COLUMNS},
+        index=pd.DatetimeIndex(pd.to_datetime(dates), name="date"),
+    )
+    mkt["mkt_ret_60"] = ret_60
+    return mkt
+
+
+def test_with_market_exact_and_backward_match() -> None:
+    market = _market(["2020-01-02", "2020-01-06", "2020-01-08"], [0.01, 0.02, 0.03])
+    stock = pd.DataFrame({col: [0.0, 0.0, 0.0] for col in STOCK_FEATURES})
+    stock["ret_60"] = [0.10, 0.20, 0.30]
+    stock["ret_250"] = [0.5, 0.5, 0.5]
+    dates = pd.Series(pd.to_datetime(["2020-01-08", "2020-01-02", "2020-01-07"]))
+
+    out = with_market(stock, dates, market)
+
+    assert tuple(out.columns) == FEATURE_COLUMNS
+    assert out["mkt_ret_60"].tolist() == pytest.approx([0.03, 0.01, 0.02])  # 01-07 -> 01-06 row
+    assert out["mkt_ret_20"].tolist() == pytest.approx([2.0, 0.0, 1.0])
+    assert out["rs_60"].tolist() == pytest.approx([0.07, 0.19, 0.28])
+    assert out["ret_60"].tolist() == pytest.approx([0.10, 0.20, 0.30])  # order preserved
+
+
+def test_with_market_before_first_market_row_is_nan() -> None:
+    market = _market(["2020-01-06"], [0.01])
+    stock = pd.DataFrame({col: [0.0] for col in STOCK_FEATURES})
+    out = with_market(stock, pd.Series(pd.to_datetime(["2020-01-02"])), market)
+    assert out[list(MARKET_COLUMNS)].isna().all(axis=None)
+    assert pd.isna(out["rs_60"].iloc[0])

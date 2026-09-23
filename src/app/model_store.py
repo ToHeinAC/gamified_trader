@@ -1,6 +1,6 @@
 # pyright: reportMissingTypeStubs=false, reportUnknownMemberType=false
 # Reason: joblib ships no type stubs; untyped calls stay inside this module (D14).
-"""Model artifact persistence: data/features.parquet, data/models/model.joblib + model.json.
+"""Model artifacts: data/features.parquet, data/market.parquet, data/models/model.joblib + .json.
 
 `read_model` only ever loads our own artifact under `GT_DATA_DIR`, never a user-supplied file
 (PRD §5 risk: joblib/pickle can execute code on load).
@@ -25,6 +25,15 @@ def write_features(df: pd.DataFrame, path: Path) -> None:
 
 def read_features(path: Path) -> pd.DataFrame:
     return pd.read_parquet(path)
+
+
+def write_market(df: pd.DataFrame, path: Path) -> None:
+    """Market table (index `date`) as parquet with a `date` column, written atomically."""
+    write_features(df.reset_index(), path)
+
+
+def read_market(path: Path) -> pd.DataFrame:
+    return pd.read_parquet(path).set_index("date")
 
 
 def write_model(

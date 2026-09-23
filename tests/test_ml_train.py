@@ -2,10 +2,12 @@
 
 from typing import cast
 
+import numpy as np
 import pandas as pd
 import pytest
 
-from app.ml import HORIZONS, LEVELS, QUANTILES, TrainResult, train
+from app.market import market_frame
+from app.ml import HORIZONS, LEVELS, QUANTILES, TrainResult, train, train_all
 from app.pool import build_pool
 from app.price_store import PriceStore
 from tests.helpers import random_walk_bars, write_store
@@ -26,10 +28,14 @@ def small_pool(tmp_path_factory: pytest.TempPathFactory) -> tuple[pd.DataFrame, 
 @pytest.fixture(scope="module")
 def trained(small_pool: tuple[pd.DataFrame, PriceStore]) -> TrainResult:
     pool_df, store = small_pool
-    return train(pool_df, store.read, seed=42, max_iter=MAX_ITER)
+    return train(pool_df, store.read, _market(store), seed=42, max_iter=MAX_ITER)
 
 
-def test_train_produces_27_models(trained: TrainResult) -> None:
+def _market(store: PriceStore) -> pd.DataFrame:
+    return market_frame(store.tickers(), store.read, min_tickers=2)
+
+
+def test_train_produces_18_models(trained: TrainResult) -> None:
     assert len(trained.models) == len(LEVELS) * len(HORIZONS) * len(QUANTILES)
     for leverage in LEVELS:
         for horizon in HORIZONS:
@@ -50,17 +56,24 @@ def test_metadata_has_documented_keys(
         "n_snapshots",
         "data_as_of",
         "period",
-        "fold_metrics",
-        "mean_v_model",
-        "mean_v_baselines",
+        "hyperparameters",
+        "growth_model",
+        "growth_baselines",
         "beats_baselines",
+        "fold_growth",
+        "worst_fold_growth",
+        "all_folds_positive",
+        "traded_share",
+        "booked_p5",
+        "mean_v_model",
         "mean_points",
         "quantile_coverage",
         "importance",
     }
     assert expected_keys <= trained.metadata.keys()
-    fold_metrics = cast(list[object], trained.metadata["fold_metrics"])
-    assert len(fold_metrics) == 4
+    fold_growth = cast(list[object], trained.metadata["fold_growth"])
+    assert len(fold_growth) == 4
+    assert len(cast(list[str], trained.metadata["feature_columns"])) == 37
     assert trained.metadata["n_snapshots"] == len(pool_df)
 
 
@@ -73,11 +86,22 @@ def test_quantile_coverage_is_a_fraction(trained: TrainResult) -> None:
 
 def test_beats_baselines_has_three_entries(trained: TrainResult) -> None:
     beats = cast(dict[str, bool], trained.metadata["beats_baselines"])
-    assert set(beats.keys()) == {"always_k120", "most_frequent_label", "random"}
+    assert set(beats.keys()) == {"never", "k120_l1", "k120_l5"}
 
 
 def test_determinism(small_pool: tuple[pd.DataFrame, PriceStore], trained: TrainResult) -> None:
     pool_df, store = small_pool
-    result_b = train(pool_df, store.read, seed=42, max_iter=MAX_ITER)
-    assert trained.metadata["mean_v_model"] == pytest.approx(result_b.metadata["mean_v_model"])
+    result_b = train(pool_df, store.read, _market(store), seed=42, max_iter=MAX_ITER)
+    assert trained.metadata["growth_model"] == pytest.approx(result_b.metadata["growth_model"])
     assert trained.metadata["importance"] == pytest.approx(result_b.metadata["importance"])
+
+
+def test_train_all_accepts_an_all_nan_feature() -> None:
+    rng = np.random.default_rng(0)
+    x = pd.DataFrame({"a": rng.normal(size=60), "b": np.full(60, np.nan)})
+    pool_df = pd.DataFrame(
+        {f"v_l{lev}_h{h}": rng.normal(size=60) for lev in LEVELS for h in HORIZONS}
+    )
+    models = train_all(x, pool_df, seed=1, max_iter=5)
+    assert len(models) == len(LEVELS) * len(HORIZONS) * len(QUANTILES)
+    assert np.isfinite(models[(1, 10, 0.5)].predict(x)).all()

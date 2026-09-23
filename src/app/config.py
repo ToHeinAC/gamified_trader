@@ -33,6 +33,10 @@ class Config:
         return self.data_dir / "features.parquet"
 
     @property
+    def market_parquet(self) -> Path:
+        return self.data_dir / "market.parquet"
+
+    @property
     def model_path(self) -> Path:
         return self.data_dir / "models" / "model.joblib"
 
