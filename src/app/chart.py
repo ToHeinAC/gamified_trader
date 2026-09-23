@@ -40,8 +40,16 @@ def decision_window(bars: pd.DataFrame, t0_idx: int) -> pd.DataFrame:
 
 
 def _col(window: pd.DataFrame, name: str) -> list[float]:
-    """Plain Python list: keeps plotly's JSON output free of binary-encoded arrays."""
-    return window[name].tolist()
+    """Plain Python list: keeps plotly's JSON output free of binary-encoded arrays.
+
+    A datetime64 column comes back as native `datetime.datetime` values, never `pandas.Timestamp`:
+    NiceGUI's `ui.plotly` sends the figure through orjson, which serializes `datetime.datetime` but
+    rejects the `pandas.Timestamp` subclass (verified; plotly's own `to_json()` hides this because
+    it stringifies dates itself, so it must never be relied on to catch this class of bug)."""
+    series = window[name]
+    if pd.api.types.is_datetime64_any_dtype(series):
+        return series.dt.to_pydatetime().tolist()
+    return series.tolist()
 
 
 def _add_candlestick(fig: go.Figure, window: pd.DataFrame, x: list[float], theme: Theme) -> None:
@@ -157,16 +165,17 @@ def build_figure(window: pd.DataFrame, theme: Theme) -> go.Figure:
     return fig
 
 
-XRange = tuple[float, float] | tuple[pd.Timestamp, pd.Timestamp]
+XRange = tuple[float, float] | tuple[str, str]
 _HALF_DAY = pd.Timedelta(hours=12)
+_ISO = "%Y-%m-%dT%H:%M:%S"
 
 
 def _x_range(vis: pd.DataFrame, n: int) -> XRange:
     if pd.api.types.is_datetime64_any_dtype(vis["x"]):
-        return (
-            pd.Timestamp(vis["x"].iloc[0]) - _HALF_DAY,
-            pd.Timestamp(vis["x"].iloc[-1]) + _HALF_DAY,
-        )
+        # ISO strings, not pandas.Timestamp: same orjson gotcha as _col (see its docstring).
+        start = pd.Timestamp(vis["x"].iloc[0]) - _HALF_DAY
+        end = pd.Timestamp(vis["x"].iloc[-1]) + _HALF_DAY
+        return start.strftime(_ISO), end.strftime(_ISO)
     x_last = float(vis["x"].iloc[-1])
     return (x_last - n + 0.5, x_last + 0.5)
 

@@ -273,3 +273,25 @@ def test_game_figures_unaffected_by_date_aware_presets() -> None:
     fig_json = fig.to_json(engine="json")
     assert fig_json is not None
     assert not re.search(r"\d{4}-\d{2}-\d{2}", fig_json)
+
+
+def test_discover_figure_is_orjson_serializable() -> None:
+    """Regression: NiceGUI's ui.plotly sends fig.to_plotly_json() through orjson (verified against
+    the real dependency), which accepts datetime.datetime but rejects pandas.Timestamp. Plotly's
+    own to_json()/to_dict() can't catch this: it stringifies dates itself."""
+    import orjson
+
+    bars = random_walk_bars(300, seed=6)
+    window = discover_window(with_indicators(bars))
+    fig = build_discover_figure(window, LIGHT, "AAA", "AAA Inc.")
+    apply_preset(fig, window, "3M")
+
+    orjson.dumps(fig.to_plotly_json())  # raises TypeError if a pandas.Timestamp leaked in
+
+
+def test_game_figure_is_orjson_serializable() -> None:
+    import orjson
+
+    window = _window(400)
+    fig = build_figure(window, LIGHT)
+    orjson.dumps(fig.to_plotly_json())

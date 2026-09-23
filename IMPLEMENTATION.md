@@ -220,3 +220,17 @@ Release 1: start with [docs/spec-common.md](docs/spec-common.md), then the miles
   confirming A21. The two-pane layout itself (CSS/visual) still needs a real or headless browser,
   which this environment doesn't have (same class of gap as M6.1's screenshots); the automated
   `test_ui_discover.py::test_ok_path_shows_recommendation_and_chart` covers its structure.
+- M8 bug fix (2026-09-23, found by the user running `gt app` for real): the Entdecken chart crashed
+  NiceGUI's socket emission with `TypeError: Type is not JSON serializable: Timestamp`. Root cause:
+  `chart.py`'s `_col()` and the new date-aware `preset_ranges()` handed raw `pandas.Timestamp`
+  values into trace `x` arrays and axis ranges; NiceGUI's `ui.plotly` sends `fig.to_plotly_json()`
+  through `orjson`, which accepts `datetime.datetime` but rejects the `Timestamp` subclass (verified
+  directly against orjson). None of the M8 tests caught it because they all read the figure back via
+  Plotly's own `to_dict()`/`to_json()`, which silently stringifies dates itself — a different,
+  more forgiving path than the one the running app actually uses. Fix: `_col()` converts a
+  datetime64 column to native `datetime.datetime` via `.dt.to_pydatetime()`; `_x_range()` returns
+  ISO strings instead of `Timestamp` objects for a datetime window. Added
+  `test_discover_figure_is_orjson_serializable`/`test_game_figure_is_orjson_serializable` in
+  `test_chart.py`, calling `orjson.dumps(fig.to_plotly_json())` directly — the same call NiceGUI
+  makes — so this class of bug fails a test next time regardless of what Plotly's own encoder would
+  tolerate. Confirmed red against the pre-fix code (identical `TypeError`) and green after.
