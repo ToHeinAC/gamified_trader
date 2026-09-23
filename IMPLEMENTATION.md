@@ -11,7 +11,7 @@ Rules: [AGENTS.md](AGENTS.md). Design: [docs/architecture.md](docs/architecture.
 | Tests (fast loop) | `uv run pytest` or `uv run pytest tests/test_chart.py` |
 | Kursdaten laden/aktualisieren | `uv run gt data download` / `uv run gt data update` |
 | Snapshot-Pool bauen | `uv run gt snapshots build --n 50000 --seed 42` |
-| ML-Modell trainieren | `uv run gt model train --seed 42` |
+| ML-Modell trainieren | `uv run gt model train --seed 42` (writes market table, features, model) |
 | App starten | `uv run gt app` (port `GT_PORT`, default 8537) |
 | Full gate | `uv run pre-commit run --all-files` |
 
@@ -31,7 +31,8 @@ Release 1: start with [docs/spec-common.md](docs/spec-common.md), then the miles
 | 6 | M6: Spielmodus | done | acceptance tests M6, full gate green | [M6](docs/spec-m6-game.md) |
 | 6b | M6.1: Desktop-Layout | done | acceptance tests M6.1, full gate green | PRD §4 M6.1 |
 | 7 | M7: Features und ML-Modell | done | acceptance tests M7, full gate green | [M7](docs/spec-m7-model.md) |
-| 8 | M8: Entdeckungsmodus | planned | after M7 | — |
+| 7b | M7.1: Modellverbesserung | done | acceptance tests M7.1, full gate green | [M7.1](docs/spec-m7-1-improve.md) |
+| 8 | M8: Entdeckungsmodus | planned | acceptance tests M8, full gate green | [M8](docs/spec-m8-discover.md) |
 | 9 | M9: Lernmodus | planned | after M7 | — |
 
 ## 3. Module map
@@ -70,9 +71,10 @@ Release 1: start with [docs/spec-common.md](docs/spec-common.md), then the miles
 | `tests/test_docs.py` | Enforces doc size limits and resolvable local links. |
 | `.claude/hooks/format_on_edit.py` | PostToolUse hook: ruff-formats each `.py` file Claude edits. |
 | `.claude/hooks/stop_gate.py` | Stop hook: runs the gate if `.py` files changed; blocks the stop on failure. |
-| `src/app/features.py` | `compute_features`: 29 causal ML features per bar (R12). |
-| `src/app/ml.py` | `recommend` (R13), `time_folds`, baselines, `build_feature_frame`, `train` (R14). |
-| `src/app/model_store.py` | `data/features.parquet` and `data/models/model.joblib`/`model.json` read/write. |
+| `src/app/market.py` | `market_frame`/`market_return`: equal-weight market-regime features per date (R12, A26). |
+| `src/app/features.py` | `compute_features` (29 stock features), `with_market` (+6 market, +2 relative = 37, R12). |
+| `src/app/ml.py` | `recommend` (growth rule, R13), `time_folds`, growth metrics/baselines, `build_feature_frame`, `train` (R14). |
+| `src/app/model_store.py` | `data/features.parquet`, `data/market.parquet`, `data/models/model.joblib`/`model.json` read/write. |
 
 ## 4. Open issues
 
@@ -156,6 +158,24 @@ Release 1: start with [docs/spec-common.md](docs/spec-common.md), then the miles
   drift. M8's PRD-mandated hint ("Das Modell schlägt die einfachen Vergleichsstrategien nicht") must
   therefore show for at least one baseline; Gesamtprodukt DoD's "Modell schlägt Baselines, oder die
   UI weist klar darauf hin" is met via that hint, not via unanimously beating all three baselines.
+- M7.1 (2026-09-23): PRD v0.6 after the M7 findings: the P25 rule never bought (K share 0 %) and
+  game-V rewarded waiting through the avoided 2 % fee, so "häufigstes Label" (W10) won by
+  construction. Now: growth rule G (R13), growth metric against never/K120 L1/K120 L5 (R14, A25),
+  8 market-regime features (A26), leverage capped at Mittel (A19), regularized hyperparameters.
+  Chosen from scratchpad experiments on the full pool (3 hyperparameter sets × with/without market
+  features × 3 or 5 quantiles × 10 decision rules); 5 quantiles and stronger/weaker regularization
+  didn't help. Implemented per [spec-m7-1-improve.md](docs/spec-m7-1-improve.md); one addition:
+  sklearn 1.9.1 raises on an all-NaN feature column (market features with < 30 tickers, e.g. small
+  test stores), so `train_all` sets such columns to 0 before fitting (verified in isolation).
+- M7.1 manual check (2026-09-23): `gt model train --seed 42` on the full pool took 74 s. Growth
+  +0.307 % per round (folds +0.274/+0.432/+0.311/+0.209 %, all positive), 70 % of rounds traded,
+  5 % quantile −6.10 % of B — identical to the experiment. Baselines: never 0, K120 Einfach
+  +0.036 % (worst fold −0.074 %), K120 Mittel +0.378 % (worst fold −0.194 %, 2020–23). So the model
+  beats two of three baselines; it trails "always K120 Mittel" on average but is the only strategy
+  positive in every period. Game view (secondary): Ø V +0.0059 (M7: +0.0048), Ø Punkte 43.3.
+  Coverage P25 0.23–0.28, P75 0.71–0.73. Top importance: `mkt_breadth200`, `mkt_ret_60`,
+  `mkt_vola20`, then stock features. Caveat: evidence rests on 4 folds, and the hyperparameters and
+  features were picked on those same folds — treat the stability result as indicative, not proven.
 - M6 gamified result badge (2026-09-23): UI polish, no PRD change. `game.badge_tier` classifies the
   chosen option's result (`optimal`/`gut`/`neutral`/`schlecht`) from `Resolution`; `ResolutionView`
   shows it as a `.gt-badge-*` chip with a CSS pop-in (and a glow pulse for `optimal`), and the tiles

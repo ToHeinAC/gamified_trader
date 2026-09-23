@@ -243,34 +243,39 @@ CSS keyframe animation was chosen instead, verified structurally by
 `test_resolution_shows_result_badge` (marker + tier class + matching label); the animation's actual
 motion still needs a manual browser check, same class of gap as M6.1's screenshots.
 
-## M7 features and ML model
+## M7 features and ML model (M7.1 state)
 
 ```
-gt model train -> cli.py -> ml.py: train
+gt model train -> cli.py -> market.py: market_frame (all tickers in data/prices, R12 market part)
+                                |  -> model_store.write_market (data/market.parquet)
+                            ml.py: train
                                 |         \
-                     build_feature_frame   features.py (compute_features, R12)
+                     build_feature_frame   features.py (compute_features 29 + with_market -> 37)
                      (groups by ticker,          |
                       one load per ticker)  time_folds (R14 embargo)
                                 |                 |
-                     train_all (27 models:   _evaluate_fold (per fold: recommend, R13,
-                     HistGradientBoosting     baselines, quantile coverage)
-                     per L, H, quantile)           |
+                     train_all (18 models:   _evaluate_fold (recommend = growth rule R13,
+                     L 1/5 x H x quantile,    booked value, baselines, game view, coverage)
+                     regularized HGB)              |
+                                |            aggregate_folds (growth vs. baselines, fold stability)
                                 |            _importance_report (permutation, P50/L=1)
                                 \                  /
                               model_store.py (features.parquet, model.joblib + model.json)
 ```
 
-`train` reuses `pool.py`'s "group by ticker, load once" pattern for `build_feature_frame`. Validation
-(R14) walks forward over the newer 50 % of snapshots in 4 contiguous blocks; a fold's training set
-excludes any snapshot whose 120-bar future window reaches into that block (embargo via `t_end`, the
-ticker's own bar date at `t0 + 120`, not a calendar offset). The three baselines and the
-recommendation's realized value/points reuse `trading.py`'s `points`/`option_values` shape directly —
-no second scoring implementation. `HistGradientBoostingRegressor`'s `max_iter` is a parameter (default
-100) so tests can lower it to stay inside the 60 s suite budget; production keeps the default.
-scikit-learn and joblib ship no type stubs, so `ml.py` and `model_store.py` carry the same
-header-pragma pattern as M1's `yahoo.py`/M2's `chart.py` (D14 in
-[spec-common.md](spec-common.md)). Full spec and the manual full-pool run:
-[spec-m7-model.md](spec-m7-model.md), [IMPLEMENTATION.md](../IMPLEMENTATION.md#4-open-issues).
+`train` reuses `pool.py`'s "group by ticker, load once" pattern for `build_feature_frame`. Market
+features come from an equal-weight index over the same price store (returns per ticker over its own
+bars, glitch filter, ≥ 30 tickers per date); `with_market` joins the latest market row ≤ each date,
+so M8 can reuse it for "today". Validation (R14) walks forward over the newer 50 % of snapshots in 4
+contiguous blocks; a fold's training set excludes any snapshot whose 120-bar future window reaches
+into that block (embargo via `t_end`, the ticker's own bar date at `t0 + 120`). The success measure
+is log growth of the *booked* balance (W = 0), because game-V scores waiting as the avoided loss;
+game-V and points stay as a secondary report and reuse `trading.points` — no second scoring
+implementation. The model only covers L ∈ {1, 5} (A19). `max_iter` is a parameter (default 200) so
+tests can lower it for the 60 s suite budget. scikit-learn and joblib ship no type stubs, so `ml.py`
+and `model_store.py` carry the header-pragma pattern of `yahoo.py`/`chart.py` (D14 in
+[spec-common.md](spec-common.md)). Specs: [M7](spec-m7-model.md), [M7.1](spec-m7-1-improve.md);
+results: [IMPLEMENTATION.md](../IMPLEMENTATION.md#4-open-issues).
 
 ## Known limits
 

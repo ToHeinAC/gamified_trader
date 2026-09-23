@@ -22,7 +22,7 @@ uv run gt data download --tickers AAPL  # a subset
 uv run gt data update                   # append new days, reload on split/dividend re-adjustment
 uv run gt app                           # web app: Spielen (rounds on the pool), Setup
 uv run gt snapshots build               # 50,000-snapshot pool (data/snapshots.parquet/.json)
-uv run gt model train                   # features + quantile model (data/features.parquet, data/models/)
+uv run gt model train                   # market table, features, model (data/market.parquet, data/features.parquet, data/models/)
 ```
 
 Config via environment (`.env`, see `.env.example`): `GT_DATA_DIR` (default `data/`),
