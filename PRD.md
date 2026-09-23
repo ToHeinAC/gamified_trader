@@ -1,8 +1,10 @@
 # PRD — Gamified Trader (Trading-Lern-App)
 
-> Stand: v0.4 vom 2026-09-23. v0.1 wurde aus der diktierten Produktbeschreibung erstellt und per
+> Stand: v0.6 vom 2026-09-23. v0.1 wurde aus der diktierten Produktbeschreibung erstellt und per
 > grill-me verfeinert; die Entscheidungen stehen in §5. Release 1 (M1–M6, M6.1) ist umgesetzt.
-> v0.4 klärt A19 und A20 und detailliert M7–M9 (Regeln R12–R14).
+> v0.4 klärt A19 und A20 und detailliert M7–M9 (Regeln R12–R14). v0.5 präzisiert M8 nach dem
+> Stand von M7 (Baseline-Hinweis, Ticker-Prüfung, Karte ohne Nutzer oder bei Sperre). v0.6 fügt
+> M7.1 ein (Wachstumsregel, Wachstums-Erfolgsmaß, Marktfeatures, höchstens Stufe Mittel).
 > Phasenstand: [IMPLEMENTATION.md](IMPLEMENTATION.md).
 
 ## 1. Problem & goal
@@ -236,9 +238,11 @@ z = 5 % p. a.; soweit nicht anders angegeben öffnet Tag 1 bei E = 100,00:
 
 ### Fachregeln R12–R14 (Release 2 und 3, normativ)
 
-**R12 Features.** Eine reine Funktion berechnet je Kerze t aus den Kerzen ≤ t (kausal, skalenfrei)
-genau diese 29 Features in dieser Reihenfolge; zu kurze Historie oder Nenner 0 → leerer Wert (NaN).
-C, H, L, V = Schluss, Hoch, Tief, Volumen; Indikatoren nach R1.
+**R12 Features** (Stand M7.1: 37). Kausal (Wert an t nutzt nur Daten ≤ t) und skalenfrei; zu kurze
+Historie oder Nenner 0 → leerer Wert (NaN). Reihenfolge wie hier; sie ist Teil des Modellartefakts.
+
+*Aktie (29), aus den Kerzen des Tickers* — C, H, L, V = Schluss, Hoch, Tief, Volumen; Indikatoren
+nach R1:
 - `ret_5`, `ret_20`, `ret_60`, `ret_120`, `ret_250`: C_t / C_{t−n} − 1.
 - `dist_sma50` = C/SMA50 − 1; `dist_sma200` = C/SMA200 − 1; `sma_ratio` = SMA50/SMA200 − 1;
   `slope_sma50`, `slope_sma200` = SMA_t / SMA_{t−20} − 1.
@@ -250,27 +254,43 @@ C, H, L, V = Schluss, Hoch, Tief, Volumen; Indikatoren nach R1.
 - `dist_high252` = C / max(H über die letzten 252 Kerzen) − 1; `dist_low252` = C / min(L …) − 1.
 - die 9 Flags aus R11 als 0/1.
 
-**R13 Empfehlung** (A19). Das Modell sagt je L ∈ {1, 5, 10} und H ∈ {10, 30, 120} die Quantile
+*Markt (6), gleichgewichtet aus allen Tickern in `data/prices/`* (A26). Marktkalender = Vereinigung
+aller Handelstage. Tagesrendite je Ticker C_t/C_{t−1} − 1; Beträge > 50 % gelten als Datenfehler
+(leer). m_t = Mittel der vorhandenen Renditen; Index I_t = Produkt der (1 + m_s) bis t (Tage mit
+< 30 Renditen zählen als 0). An Tagen mit < 30 Renditen sind alle Marktfeatures leer.
+- `mkt_ret_20`, `mkt_ret_60`, `mkt_ret_250`: I_t / I_{t−n} − 1 (n Markttage).
+- `mkt_dist_sma200` = I_t / SMA200(I)_t − 1; `mkt_vola20` = Standardabweichung (ddof = 0) von m über
+  die letzten 20 Markttage.
+- `mkt_breadth200` = Anteil der Ticker mit C > eigenem SMA200 unter denen mit definiertem SMA200
+  (mindestens 30, sonst leer).
+
+*Relativ (2)*: `rs_60` = `ret_60` − `mkt_ret_60`; `rs_250` = `ret_250` − `mkt_ret_250`. Ein Snapshot
+nutzt die Marktzeile seines t0; Entdecken nutzt die jüngste Marktzeile ≤ Tag 0 (M8).
+
+**R13 Empfehlung** (A19). Das Modell sagt je L ∈ {1, 5} und H ∈ {10, 30, 120} die Quantile
 P25, P50, P75 von V(K_H) mit Standardkosten voraus; je (L, H) werden die drei Werte aufsteigend
-sortiert (keine Quantil-Kreuzung).
-- Bestes Paar = größtes P25 der neun Paare; bei Gleichstand kleineres L, dann kleineres H.
-- P25 > 0 → Empfehlung K_H auf der Stufe zu L (1 = Einfach, 5 = Mittel, 10 = Profi).
+sortiert (keine Quantil-Kreuzung). Stufe Profi wird nie empfohlen (A19).
+- Wachstumswert G(L, H) = Mittel von ln(1 + max(q, −0,99)) über die drei Quantile q.
+- Bestes Paar = größtes G der sechs Paare; bei Gleichstand kleineres L, dann kleineres H.
+- G > 0 → Empfehlung K_H auf der Stufe zu L (1 = Einfach, 5 = Mittel).
 - Sonst → Empfehlung W_H, Stufe Einfach, mit H = argmin P50(L = 1, H); bei Gleichstand kleineres H.
-- Angezeigte Spanne: P25/P50/P75 des Paars; bei W die gespiegelten Werte −P75/−P50/−P25 von
-  K_H bei L = 1.
+- Angezeigt: G und P25/P50/P75 des Paars; bei W die gespiegelten Werte −P75/−P50/−P25 von K_H bei
+  L = 1.
 
 **R14 Validierung.** Die Snapshots werden nach t0 sortiert; die jüngeren 50 % bilden den
 Testzeitraum, geteilt in 4 gleich große, zeitlich aufeinanderfolgende Blöcke (Folds).
 - Training für Fold k: alle Snapshots mit `t_end` < kleinstes t0 des Blocks k, wobei `t_end` = Datum
   der Kerze Tag 0 + 120 (Embargo: kein Zukunftsfenster reicht in den Test).
-- Realisiertes V einer Empfehlung: K_H bei L → `v_l{L}_h{H}`; W_H → −`v_l1_h{H}`. Punkte nach R8
-  gegen V\* derselben Stufe.
-- Baselines auf denselben Snapshots: „immer K120 Einfach"; „häufigstes Label" (häufigstes
-  `label_l1` ohne NEUTRAL im Trainingsteil, Stufe Einfach); „Zufall" (eine der sechs Optionen
-  gleichverteilt, Stufe Einfach, fester Seed). Diagnose ohne Einfluss auf das Erfolgsmaß: „Modell nur
-  Einfach" (R13 auf L = 1 beschränkt).
-- Erfolgsmaß (A25): `beats_baselines` = Ø V des Modells über alle Testfolds > Ø V jeder der drei
-  Baselines.
+- Gebuchter Wert einer Empfehlung (wie R9): K_H bei L → `v_l{L}_h{H}`; W → 0. Wachstum einer
+  Strategie = Mittel von ln(1 + gebuchter Wert) über ihre Test-Snapshots, je Fold und über alle
+  Folds (A25).
+- Baselines auf denselben Snapshots: „nie handeln" (Wachstum 0), „immer K120 Einfach", „immer K120
+  Mittel" (L = 5).
+- Erfolgsmaß (A25): `beats_baselines` je Baseline = Wachstum des Modells über alle Folds > Wachstum
+  der Baseline. Dazu berichtet: Wachstum je Fold, schlechtester Fold, ob jeder Fold positiv ist,
+  Anteil gehandelter Runden, 5-%-Quantil des gebuchten Werts.
+- Zweitrangig, nur berichtet (Spiel-Sicht): Ø V wie im Spiel (W_H → −`v_l1_h{H}`) und Ø Punkte nach
+  R8 gegen V\* derselben Stufe.
 - Quantil-Abdeckung je (L, H): Anteil der Test-V ≤ P25 bzw. ≤ P75 (Soll 25 % bzw. 75 %).
 - Permutation Importance: die P50-Modelle für L = 1, letzter Fold, 5 Wiederholungen, Pinball-Loss,
   gemittelt über die drei Horizonte.
@@ -492,6 +512,9 @@ Testzeitraum, geteilt in 4 gleich große, zeitlich aufeinanderfolgende Blöcke (
 - **Dependencies:** M5, M6.
 
 ### M7 — Features und ML-Modell
+> Umgesetzt mit R12–R14 in der Fassung v0.4 (29 Features, P25-Regel, V-Baselines); M7.1 ersetzt
+> diese Teile durch die Fassung v0.6.
+
 - **Deliverable:**
   - Reine Featurefunktion nach R12 (eine Zeile je Kerze).
   - CLI `gt model train [--seed 42]`: berechnet die Features aller Pool-Snapshots an Tag 0 und schreibt
@@ -526,21 +549,57 @@ Testzeitraum, geteilt in 4 gleich große, zeitlich aufeinanderfolgende Blöcke (
   bleibt gültig lesbar, M8 zeigt dessen Datenstand.
 - **Dependencies:** M4.
 
+### M7.1 — Modellverbesserung
+- **Anlass:** Der M7-Bericht zeigte, dass die P25-Regel nie kauft (P25 ist bei CRV 1 : 2 fast immer
+  negativ) und das V-Erfolgsmaß Warten belohnt (V(W10) = −V(K10) enthält die 2-%-Gebühr). Experimente
+  auf dem vollen Pool (Walk-Forward wie R14): Wachstumsregel + Marktfeatures + L ≤ 5 ergab +0,31 %
+  Wachstum je Runde, positiv in allen 4 Folds; „immer K120 Mittel" +0,38 %, ein Fold negativ.
+- **Deliverable:**
+  - Reine Marktfunktion nach R12 (Markt, Relativ) über alle Ticker des Preis-Stores (Laden injiziert);
+    `gt model train` schreibt die Markttabelle nach `data/market.parquet` (Datum, 6 Marktfeatures).
+  - Features, Empfehlung und Validierung nach R12–R14 v0.6: 37 Features, 18 Modelle (L ∈ {1, 5},
+    H ∈ {10, 30, 120}, q ∈ {0,25; 0,5; 0,75}), Wachstumsregel, Wachstums-Baselines.
+  - Feste, regularisierte Hyperparameter: Lernrate 0,05, 200 Iterationen, min. 200 Snapshots je
+    Blatt, max. 15 Blätter, L2 = 1,0 (Tests dürfen die Iterationszahl senken).
+  - `model.json` und CLI-Bericht mit den Kennzahlen aus R14 v0.6.
+- **Acceptance criteria:**
+  - Marktfeatures stimmen auf einem synthetischen Store (bekannte Renditen) mit Handrechnung überein;
+    Kausalität: Kerzen nach t ändern die Marktzeile an t nicht; < 30 Renditen → leer (Schwelle im
+    Test einstellbar); Rendite > 50 % zählt als fehlend.
+  - Die 29 Aktienfeatures bleiben unverändert (bestehende Tests grün).
+  - R13 v0.6 als reine Funktion getestet: G-Berechnung inkl. Kappung bei −99 %, Gleichstandsregeln,
+    G = 0 → Warten, nur L ∈ {1, 5}.
+  - Wachstum, Baselines, `beats_baselines`, schlechtester Fold und Positivität auf einem synthetischen
+    Pool mit bekannten Werten getestet.
+  - Determinismus wie M7.
+  - Manuell: `gt model train` auf dem vollen Pool ≤ 15 min; Ergebnis im Rahmen des Experiments
+    (Wachstum ≈ +0,3 % je Runde, alle Folds positiv) und in IMPLEMENTATION.md notiert. Liegt es
+    deutlich darunter, wird das gemeldet, nicht nachjustiert.
+- **Edge cases:** Snapshot-Datum ohne Marktzeile (weniger als 30 Ticker) → Marktfeatures leer, das
+  Modell verarbeitet NaN. Pool neu gebaut → Modell neu trainieren (die Featureliste prüft M8).
+- **Dependencies:** M7.
+
 ### M8 — Entdeckungsmodus
 - **Deliverable:** Seite „Entdecken" in der Navigation.
   - Eingabefeld mit Vorschlägen aus `universe.csv` (Ticker und Name); jeder andere Yahoo-Ticker ist
-    frei eingebbar (getrimmt, großgeschrieben).
+    frei eingebbar (getrimmt, großgeschrieben). Erlaubt sind 1–20 Zeichen aus A–Z, 0–9, `.`, `-`,
+    `^`, `=`; alles andere → Meldung ohne Abruf (die Eingabe wird zum Dateinamen im Cache).
   - Kurse im eigenen Cache `data/discover/<TICKER>.parquet` mit `data/discover/meta.json`
     (Abrufdatum und Wertpapiertyp je Ticker), nie in `data/prices/` (A21). Neu geladen wird je Ticker
     höchstens einmal pro Kalendertag. Tag 0 = letzte Kerze vor dem heutigen Datum.
   - Chart wie R2, aber mit Kalenderdatum auf der x-Achse und dem Ticker im Titel.
-  - Empfehlung nach R13 mit dem M7-Modell: Option und Stufe; Karte nach R4/R5 für das aktuelle B, den
-    Hebel der Stufe und g, z des Nutzers; P25/P50/P75 der Empfehlung und eine Tabelle aller neun
-    (L, H); die 5 wichtigsten Features (globale Importance) mit aktuellem Wert und Perzentil im Pool.
-  - Hinweise: dauerhaft „Lern-App, keine Anlageberatung"; bei `beats_baselines` = falsch deutlich
-    „Das Modell schlägt die einfachen Vergleichsstrategien nicht"; weichen L_mittel, L_profi, g oder z
-    von 5, 10, 2 %, 5 % ab: „Modell mit Hebel 1/5/10 und Standardkosten trainiert, die Karte nutzt
-    Ihre Werte" (A22).
+  - Empfehlung nach R13 mit dem M7.1-Modell: Option und Stufe; Karte nach R4/R5 für das aktuelle B,
+    den Hebel der Stufe und g, z des Nutzers; G und P25/P50/P75 der Empfehlung und eine Tabelle aller
+    sechs (L, H); die 5 wichtigsten Features (globale Importance) mit aktuellem Wert und Perzentil im
+    Pool.
+  - Marktfeatures aus `data/market.parquet` (jüngste Zeile ≤ Tag 0). `gt data download` und
+    `gt data update` schreiben die Markttabelle am Ende neu. Liegt ihre letzte Zeile mehr als 5
+    Kalendertage vor Tag 0 → keine Empfehlung, Hinweis „Marktdaten veraltet – `gt data update`
+    ausführen".
+  - Hinweise: dauerhaft „Lern-App, keine Anlageberatung"; schlägt das Modell laut `model.json` nicht
+    jede Baseline (A25), deutlich „Das Modell schlägt nicht jede einfache Vergleichsstrategie", mit
+    dem Wachstum von Modell und Baselines; weicht L_mittel, g oder z von 5, 2 %, 5 % ab: „Modell mit
+    Hebel 1/5 und Standardkosten trainiert, die Karte nutzt Ihre Werte" (A22).
   - Keine Buchung, keine Punkte, keine Speicherung von Empfehlungen.
 - **Acceptance criteria:**
   - Unbekannter Ticker oder leere Antwort → verständliche Meldung, kein Absturz (`User`-Fixture,
@@ -550,15 +609,20 @@ Testzeitraum, geteilt in 4 gleich große, zeitlich aufeinanderfolgende Blöcke (
     Empfehlung, Hinweis „Modell nur auf Aktien trainiert". Universum-Ticker brauchen keine Abfrage.
   - Cache: zweiter Aufruf am selben Tag ohne Netzaufruf, am Folgetag genau ein Abruf (gemockter
     Adapter, gefälschte Uhr). Eine Kerze mit heutigem Datum wird verworfen.
-  - Die Empfehlung nutzt nur Kerzen bis Tag 0 und dieselbe Featurefunktion wie M7 (Test).
+  - Die Empfehlung nutzt nur Kerzen bis Tag 0 und dieselbe Featurefunktion wie M7.1 (Test).
+  - Marktdaten älter als 5 Kalendertage vor Tag 0 oder `data/market.parquet` fehlt → Chart ohne
+    Empfehlung, Hinweis (Test).
   - Modell fehlt oder seine Featureliste passt nicht → Chart ohne Empfehlung, Hinweis auf
     `gt model train`.
-  - Disclaimer immer sichtbar; Hinweis bei `beats_baselines` = falsch sichtbar (Tests).
+  - Disclaimer immer sichtbar; Baseline-Hinweis sichtbar, sobald eine Baseline nicht geschlagen ist
+    (Tests).
+  - Ungültige Eingabe (z. B. `../x`, Leerzeichen im Symbol) → Meldung, kein Adapter-Aufruf (Test).
   - `gt snapshots build` liest `data/discover/` nicht (Test).
   - Manuell: 5 echte Ticker, davon 1 ETF; Antwort ≤ 5 s bei kaltem, ≤ 1 s bei warmem Cache.
 - **Edge cases:** Yahoo-Fehler oder Rate-Limit → Meldung; vorhandene Cache-Daten werden mit
-  Datenstand angezeigt. Kein Nutzer → Karte ohne Positionsgröße, Hinweis auf Setup.
-- **Dependencies:** M5, M7.
+  Datenstand angezeigt. Kein Nutzer oder K-Optionen gesperrt (R9) → Empfehlung ohne Karte, Hinweis
+  auf Setup. ATR14 = 0 an Tag 0 → Empfehlung ohne Karte.
+- **Dependencies:** M5, M7.1.
 
 ### M9 — Lernmodus
 - **Deliverable:** Seite „Lernen" mit drei Bereichen.
@@ -630,22 +694,30 @@ Die Regeln in §4 setzen diese Entscheidungen um; bei Widerspruch gilt §4.
 
 ### Entscheidungen der PRD-Iteration v0.4 (2026-09-23)
 
-- **A19 Empfehlung** über das pessimistische Quantil statt über den Erwartungswert: gewählt wird das
-  (L, H) mit dem größten vorhergesagten P25 von V, sodass ein höherer Hebel nur gewinnt, wenn auch
-  der ungünstige Fall besser wird (R13). Halbes Kelly und „immer Einfach" wurden verworfen.
-  Nicht-Aktien: Chart ja, Empfehlung nein (M8).
+- **A19 Empfehlung** (v0.6, nach den M7-Ergebnissen): gewählt wird das (L, H) mit dem größten
+  erwarteten Log-Wachstum G über P25/P50/P75; G bestraft Verluste mit Hebel von selbst (R13). Die
+  v0.4-Regel „P25 > 0" kaufte nie und wurde ersetzt. Empfohlen wird höchstens Stufe Mittel: drei
+  Quantile unterschätzen die Ränder, ohne Deckel wählte das Modell oft L = 10 (5-%-Quantil des
+  gebuchten Werts −12 % statt −6 % von B). Nicht-Aktien: Chart ja, Empfehlung nein (M8).
 - **A20 Lerninhalte** als deutsche Markdown-Dateien unter `src/app/resources/learn/`: je Indikator
   (5) und Ereignis aus R11 (9) eine Seite mit 150–300 Wörtern, dazu „Einzelfall und Erwartungswert"
   und ein Satz je Feature aus R12. Claude formuliert sie in M9, der Nutzer nimmt sie im Diff ab.
 - **A21** Entdecken nutzt einen eigenen Kurs-Cache (`data/discover/`), damit Pool und die reine
   CLI-Datenpflege (A18) unberührt bleiben; die möglicherweise unvollständige heutige Kerze entfällt.
-- **A22** Das Modell kennt nur die Pool-Stufen L = 1/5/10 mit Standardkosten; die Karte in Entdecken
+- **A22** Das Modell kennt nur die Pool-Stufen L = 1 und 5 mit Standardkosten; die Karte in Entdecken
   rechnet mit den Werten des Nutzers und weist auf Abweichungen hin.
 - **A23** Beispielcharts im Lernmodus stammen nur aus bereits gespielten Runden des Nutzers; sonst
   würde die Bibliothek den Ausgang späterer Spielrunden verraten.
 - **A24** Setup-Labor: Stichprobe ≤ 1.000 Snapshots, jeder Trade mit B = 10.000 €; die Kapitalkurve
   bucht sequenziell und ist als idealisiert gekennzeichnet.
-- **A25** Erfolgsmaß des Modells: Ø V über alle Testfolds gegen jede der drei Baselines (R14).
+- **A25** Erfolgsmaß des Modells (v0.6): Log-Wachstum des gebuchten Guthabens (W = 0) über alle
+  Testfolds gegen „nie handeln", „immer K120 Einfach" und „immer K120 Mittel" (R14). Ø V wurde
+  ersetzt, weil V(W) = −V(K) Warten mit der vermiedenen Gebühr belohnt, obwohl W nichts bucht.
+  Stabilität über die Folds wird berichtet, ist aber kein Teil des Erfolgsmaßes (4 Folds sind zu
+  wenig, um ein nachträglich gewähltes Kriterium zu tragen).
+- **A26** Marktfeatures aus dem eigenen Universum (gleichgewichtet), nicht aus einem externen Index:
+  kein zusätzlicher Download, dieselben Tickerdaten wie der Pool. Sie erben dessen Survivorship Bias
+  (A11).
 
 ### Risiken
 
