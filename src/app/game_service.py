@@ -10,7 +10,7 @@ from decimal import Decimal
 
 import pandas as pd
 
-from app import universe
+from app import discover, discover_service, universe
 from app.config import Config
 from app.db import Database, RoundRow, UserRow
 from app.game import (
@@ -136,6 +136,20 @@ class GameService:
         setting = setting_of_round(rnd, user.start_capital_cents)
         assert rnd.option is not None
         return resolve(data.snap, setting, OptionCode(rnd.option))
+
+    def ml_quantiles(
+        self, data: RoundData
+    ) -> dict[tuple[int, int], tuple[float, float, float]] | None:
+        """Model quantiles per (L, H) from the features at Tag 0; None without a usable model."""
+        bundle = discover_service.load_bundle(self.cfg)
+        market = discover_service.load_market(self.cfg)
+        hist = data.ind.iloc[: data.t0_idx + 1]
+        tag0 = pd.Timestamp(hist["date"].iloc[-1])
+        if bundle is None or not discover.model_matches(bundle.meta):
+            return None
+        if market is None or not discover.market_fresh(market.loc[:tag0], tag0):
+            return None
+        return discover.quantiles_for(bundle.models, discover.feature_row(hist, market))
 
     def name_of(self, ticker: str) -> str:
         return universe.ticker_names().get(ticker, ticker)

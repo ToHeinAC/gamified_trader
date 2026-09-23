@@ -48,10 +48,10 @@ Release 1: start with [docs/spec-common.md](docs/spec-common.md), then the miles
 | `src/app/resources/universe.csv` | 668-row ticker universe; built once, see [docs/data.md](docs/data.md). |
 | `src/app/indicators.py` | `with_indicators`: SMA, Bollinger, Wilder RSI/ATR (R1). |
 | `src/app/theme.py` | `LIGHT`/`DARK` design tokens, `page_css()`. |
-| `src/app/chart.py` | `decision_window`/`resolution_window` (leak-proof, drop `date`), `discover_window`/`build_discover_figure` (real dates, M8), `build_figure`, `build_resolution_figure`, `add_preview`, presets (R2). |
+| `src/app/chart.py` | `decision_window`/`resolution_window` (leak-proof, drop `date`), `discover_window`/`build_discover_figure` (real dates, M8), `build_figure`, `build_resolution_figure` + `exit_marker`, `add_preview`, presets (R2), chart color constants. |
 | `src/app/ui/root.py` | App shell: header, theme resolution, routing (`root()`, `run_app()`); links Spielen/Entdecken/Setup. |
 | `src/app/ui/chart_panel.py` | `ui.plotly` panel from a figure factory; optional preset buttons. |
-| `src/app/ui/play.py` | Page "Spielen": `PlayPage`/`DecisionView`/`ResolutionView`, the full round loop. |
+| `src/app/ui/play.py` | Page "Spielen": `PlayPage`/`DecisionView`/`ResolutionView` (incl. ML-Strategie top-3 card), the full round loop. |
 | `src/app/trading.py` | `make_card(s)`, `simulate(_all)`, `option_values`/`points`/`label`/`book`: R3–R9, pure Decimal math. |
 | `src/app/signals.py` | `signal_flags`: 9 technical event flags per bar (R11). |
 | `src/app/eligibility.py` | `eligible_mask`: R10 candidate mask per bar. |
@@ -63,7 +63,7 @@ Release 1: start with [docs/spec-common.md](docs/spec-common.md), then the miles
 | `src/app/ui/context.py` | `PageContext`: per-client `Config`/`Database`/theme/user name shared by pages. |
 | `src/app/ui/setup.py` | Page "Setup": create/select users, edit settings, reset balance. |
 | `src/app/game.py` | Pure: `draw_snapshot`, `Setting`, `card_lines`, `resolve`, `outcome`, `round_number`, `badge_tier` (R1–R9, D7, D9). |
-| `src/app/game_service.py` | `GameService`: wires DB, pool and prices for `start_round`/`confirm`/`resolution`. |
+| `src/app/game_service.py` | `GameService`: wires DB, pool and prices for `start_round`/`confirm`/`resolution`; `ml_quantiles` (model at Tag 0). |
 | `src/app/cli.py` | `gt` entry point: `data download`/`update` (also refresh `market.parquet`), `app`, `snapshots build`, `model train`. |
 | `tests/helpers.py` | Synthetic OHLCV factories (`make_bars`, `random_walk_bars`, `write_store`). |
 | `tests/conftest.py` | Shared fixtures; blocks network access in all tests. |
@@ -73,7 +73,7 @@ Release 1: start with [docs/spec-common.md](docs/spec-common.md), then the miles
 | `.claude/hooks/stop_gate.py` | Stop hook: runs the gate if `.py` files changed; blocks the stop on failure. |
 | `src/app/market.py` | `market_frame`/`market_return`: equal-weight market-regime features per date (R12, A26). |
 | `src/app/features.py` | `compute_features` (29 stock features), `with_market` (+6 market, +2 relative = 37, R12). |
-| `src/app/ml.py` | `recommend` (growth rule, R13), `time_folds`, growth metrics/baselines, `build_feature_frame`, `train` (R14). |
+| `src/app/ml.py` | `recommend`/`rank_buys` (growth rule, R13), `time_folds`, growth metrics/baselines, `build_feature_frame`, `train` (R14). |
 | `src/app/model_store.py` | `data/features.parquet`, `data/market.parquet`, `data/models/model.joblib`/`model.json` read/write. |
 | `src/app/discover.py` | Pure M8 rules: ticker check, cache freshness, `analyze` (R13 on the last completed bar), `recommendation_card`. |
 | `src/app/discover_store.py` | `DiscoverStore`: `data/discover/<TICKER>.parquet` + `meta.json` (fetch date, quote type). |
@@ -234,3 +234,8 @@ Release 1: start with [docs/spec-common.md](docs/spec-common.md), then the miles
   `test_chart.py`, calling `orjson.dumps(fig.to_plotly_json())` directly — the same call NiceGUI
   makes — so this class of bug fails a test next time regardless of what Plotly's own encoder would
   tolerate. Confirmed red against the pre-fix code (identical `TypeError`) and green after.
+- Chart styling + ML-Strategie card (2026-09-23): UI polish, no PRD change; details in
+  [docs/architecture.md](docs/architecture.md#chart-styling-and-ml-strategy-in-the-resolution-2026-09-23).
+  The card needs `data/models/` and `data/market.parquet` (`gt model train`); on 2026-09-23 the
+  repo's `data/` had neither, so there the app shows the "Kein ML-Modell verfügbar" hint. Marker
+  and line colors need a manual browser check (no browser in this environment).

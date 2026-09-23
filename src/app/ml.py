@@ -71,20 +71,26 @@ def growth_score(q: _Quantiles) -> float:
     return float(np.mean(np.log1p(np.maximum(np.array(q, dtype=np.float64), LOG_FLOOR))))
 
 
-def recommend(quantiles: Mapping[tuple[int, int], _Quantiles]) -> Recommendation:
-    """R13: the (L, H) with the largest G wins (ties: smaller L, then smaller H); G <= 0 waits."""
+def rank_buys(quantiles: Mapping[tuple[int, int], _Quantiles]) -> list[Recommendation]:
+    """All (L, H) buy pairs, largest G first (ties: smaller L, then smaller H)."""
     pairs = [(leverage, horizon) for leverage in LEVELS for horizon in HORIZONS]
     scores = {lh: growth_score(quantiles[lh]) for lh in pairs}
-    best = min(pairs, key=lambda lh: (-scores[lh], lh[0], lh[1]))
-    if scores[best] > 0:
-        p25, p50, p75 = quantiles[best]
-        return Recommendation(buy_option(best[1]), LEVEL_OF[best[0]], p25, p50, p75, scores[best])
+    ranked = sorted(pairs, key=lambda lh: (-scores[lh], lh[0], lh[1]))
+    return [
+        Recommendation(buy_option(h), LEVEL_OF[lev], *quantiles[(lev, h)], scores[(lev, h)])
+        for lev, h in ranked
+    ]
+
+
+def recommend(quantiles: Mapping[tuple[int, int], _Quantiles]) -> Recommendation:
+    """R13: the (L, H) with the largest G wins (ties: smaller L, then smaller H); G <= 0 waits."""
+    best = rank_buys(quantiles)[0]
+    if best.growth > 0:
+        return best
 
     horizon = min(HORIZONS, key=lambda h: (quantiles[(1, h)][1], h))
-    p25_1, p50_1, p75_1 = quantiles[(1, horizon)]
-    return Recommendation(
-        wait_option(horizon), Level.EINFACH, -p75_1, -p50_1, -p25_1, scores[(1, horizon)]
-    )
+    q = quantiles[(1, horizon)]
+    return Recommendation(wait_option(horizon), Level.EINFACH, -q[2], -q[1], -q[0], growth_score(q))
 
 
 class QuantileModel(Protocol):

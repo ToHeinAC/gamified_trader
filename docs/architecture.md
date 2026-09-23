@@ -243,6 +243,24 @@ CSS keyframe animation was chosen instead, verified structurally by
 `test_resolution_shows_result_badge` (marker + tier class + matching label); the animation's actual
 motion still needs a manual browser check, same class of gap as M6.1's screenshots.
 
+### Chart styling and ML strategy in the resolution (2026-09-23)
+
+UI polish, no PRD change. Chart colors live as constants in `chart.py`: Bollinger upper/lower are
+solid gray (`BB_COLOR`; the middle band stays dotted), the K preview draws a solid purple
+"Vorschau Einstieg" line at P0 (`ENTRY_LINE_COLOR`) and a solid dark-blue TP line
+(`TP_LINE_COLOR`; SL keeps `theme.down`). In the resolution chart the entry is a black
+triangle-up (`ENTRY_COLOR`) and the exit marker comes from `exit_marker(reason, pnl, theme)`:
+circle for a time exit, square for SL/TP/KO, green for net P&L > 0, else red. These colors are
+fixed, not theme tokens, so black and dark blue have low contrast in dark mode.
+
+`ResolutionView` adds an "ML-Strategie" card: `GameService.ml_quantiles(data)` computes the M7
+features from bars up to Tag 0 (via `discover.feature_row`, same path as Entdecken) and returns
+the model's quantiles, or `None` without a matching model or with a market table that doesn't
+reach Tag 0 (card shows a `gt model train` hint). `ml.rank_buys` sorts the six (L, H) buy pairs
+by growth score G with R13's tie-break (`recommend` now uses it too); the card shows R13's
+recommendation plus the top 3 with G and P25/P50/P75. Snapshots are in the model's training pool,
+so this is in-sample; the card says so.
+
 ## M7 features and ML model (M7.1 state)
 
 ```

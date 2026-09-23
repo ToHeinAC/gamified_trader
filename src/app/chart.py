@@ -2,6 +2,8 @@
 # Reason: plotly/yfinance ship no type stubs; untyped calls stay inside this module (PRD §5 risks).
 """Plotly chart: candles, indicators and preset ranges (PRD R2). Leak-proof: no dates in output."""
 
+from decimal import Decimal
+
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
@@ -16,6 +18,10 @@ MAX_WINDOW = 1260
 PRESETS: dict[str, int] = {"3M": 63, "6M": 126, "1J": 252, "5J": 1260}
 START_PRESET = "1J"
 Y_PAD = 0.03
+BB_COLOR = "#9E9E9E"
+ENTRY_LINE_COLOR = "#8E24AA"
+TP_LINE_COLOR = "#0D2A8A"
+ENTRY_COLOR = "#000000"
 TRACE_NAMES = (
     "Kurs",
     "SMA50",
@@ -82,15 +88,13 @@ def _add_overlay_lines(fig: go.Figure, window: pd.DataFrame, x: list[float], the
         row=1,
         col=1,
     )
-    for name, column, dash in (
-        ("BB oben", "bb_upper", "dash"),
-        ("BB Mitte", "bb_mid", "dot"),
-        ("BB unten", "bb_lower", "dash"),
+    for name, column, color, dash in (
+        ("BB oben", "bb_upper", BB_COLOR, "solid"),
+        ("BB Mitte", "bb_mid", theme.muted, "dot"),
+        ("BB unten", "bb_lower", BB_COLOR, "solid"),
     ):
         fig.add_trace(
-            go.Scatter(
-                x=x, y=_col(window, column), name=name, line={"color": theme.muted, "dash": dash}
-            ),
+            go.Scatter(x=x, y=_col(window, column), name=name, line={"color": color, "dash": dash}),
             row=1,
             col=1,
         )
@@ -205,10 +209,15 @@ EXIT_LABELS = {
 def _preview_k(fig: go.Figure, card: Card, horizon: int, theme: Theme) -> None:
     x = [0, horizon]
     fig.add_trace(
+        go.Scatter(
+            x=x, y=[float(card.p0)] * 2, name="Vorschau Einstieg", line_color=ENTRY_LINE_COLOR
+        )
+    )
+    fig.add_trace(
         go.Scatter(x=x, y=[float(card.sl_price)] * 2, name="Vorschau SL", line_color=theme.down)
     )
     fig.add_trace(
-        go.Scatter(x=x, y=[float(card.tp_price)] * 2, name="Vorschau TP", line_color=theme.up)
+        go.Scatter(x=x, y=[float(card.tp_price)] * 2, name="Vorschau TP", line_color=TP_LINE_COLOR)
     )
     if card.ko_price is not None:
         fig.add_trace(
@@ -245,13 +254,28 @@ def resolution_window(ind: pd.DataFrame, t0_idx: int) -> pd.DataFrame:
     return window.drop(columns=["date"]).reset_index(drop=True)
 
 
-def _add_resolution_markers(fig: go.Figure, res: Resolution) -> None:
+def exit_marker(reason: ExitReason, pnl: Decimal, theme: Theme) -> tuple[str, str]:
+    """Circle for a time exit, square for a SL/TP/KO hit; green for net profit, else red."""
+    symbol = "circle" if reason == ExitReason.TIME else "square"
+    return symbol, theme.up if pnl > 0 else theme.down
+
+
+def _add_resolution_markers(fig: go.Figure, res: Resolution, theme: Theme) -> None:
     horizon = horizon_of(res.chosen)
     if not is_buy(res.chosen):
         fig.add_vline(x=horizon, line_dash="dash")
         return
     result = res.results[horizon]
-    fig.add_trace(go.Scatter(x=[1], y=[float(result.entry)], mode="markers", name="Einstieg"))
+    fig.add_trace(
+        go.Scatter(
+            x=[1],
+            y=[float(result.entry)],
+            mode="markers",
+            name="Einstieg",
+            marker={"symbol": "triangle-up", "color": ENTRY_COLOR, "size": 13},
+        )
+    )
+    symbol, color = exit_marker(result.reason, result.pnl, theme)
     fig.add_trace(
         go.Scatter(
             x=[result.exit_day],
@@ -259,6 +283,7 @@ def _add_resolution_markers(fig: go.Figure, res: Resolution) -> None:
             mode="markers",
             name="Ausstieg",
             text=[EXIT_LABELS[result.reason]],
+            marker={"symbol": symbol, "color": color, "size": 12},
         )
     )
 
@@ -267,7 +292,7 @@ def build_resolution_figure(window: pd.DataFrame, theme: Theme, res: Resolution)
     fig = build_figure(window, theme)
     fig.add_vrect(x0=0.5, x1=120.5, fillcolor=theme.accent, opacity=0.08, line_width=0)
     fig.add_vline(x=0, line_dash="dot")
-    _add_resolution_markers(fig, res)
+    _add_resolution_markers(fig, res, theme)
 
     n = PRESETS["1J"]
     fig.update_xaxes(range=[-(n - 0.5), 120.5])

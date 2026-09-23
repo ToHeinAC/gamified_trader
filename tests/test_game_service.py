@@ -2,11 +2,18 @@ import logging
 import random
 from pathlib import Path
 
+import numpy as np
+import pandas as pd
 import pytest
 
+from app import discover_service
 from app.db import Database
+from app.discover import ModelBundle
+from app.features import FEATURE_COLUMNS
 from app.game import setting_for
 from app.game_service import GameService, PoolMissingError
+from app.market import MARKET_COLUMNS
+from app.ml import HORIZONS, LEVELS, QUANTILES
 from app.settings_rules import UserSettings
 from app.trading import Level, OptionCode, make_card, option_values, simulate
 from tests.helpers import make_game_env
@@ -102,3 +109,53 @@ def test_resolution_is_deterministic(tmp_path: Path) -> None:
     chosen = res.outcomes[res.chosen]
     assert chosen.value == pytest.approx(done.v)
     assert chosen.points == done.points
+
+
+class _FakeModel:
+    def __init__(self, value: float) -> None:
+        self.value = value
+
+    def predict(self, x: pd.DataFrame) -> np.ndarray[tuple[int], np.dtype[np.float64]]:
+        return np.full(len(x), self.value, dtype=np.float64)
+
+
+def test_ml_quantiles_none_without_model(tmp_path: Path) -> None:
+    cfg, _store, user_id = make_game_env(tmp_path, seed=5)
+    service = GameService(cfg, Database(cfg.db_path), rng=random.Random(1))
+    rnd = service.start_round(user_id)
+    assert service.ml_quantiles(service.load(rnd.ticker, rnd.t0)) is None
+
+
+def test_ml_quantiles_uses_features_at_t0(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    cfg, _store, user_id = make_game_env(tmp_path, seed=5)
+    models = {
+        (lev, h, q): _FakeModel(0.01 * lev + h / 1000 + q)
+        for lev in LEVELS
+        for h in HORIZONS
+        for q in QUANTILES
+    }
+    bundle = ModelBundle(models=models, meta={"feature_columns": list(FEATURE_COLUMNS)})
+    seen: list[pd.Timestamp] = []
+    real_feature_row = discover_service.discover.feature_row
+
+    def spy(ind: pd.DataFrame, market: pd.DataFrame) -> pd.DataFrame:
+        seen.append(pd.Timestamp(ind["date"].iloc[-1]))
+        return real_feature_row(ind, market)
+
+    service = GameService(cfg, Database(cfg.db_path), rng=random.Random(1))
+    rnd = service.start_round(user_id)
+    data = service.load(rnd.ticker, rnd.t0)
+    dates = pd.DatetimeIndex(data.ind["date"], name="date")
+    market = pd.DataFrame({c: 0.0 for c in MARKET_COLUMNS}, index=dates)
+    monkeypatch.setattr(discover_service, "load_bundle", lambda c: bundle)
+    monkeypatch.setattr(discover_service, "load_market", lambda c: market)
+    monkeypatch.setattr(discover_service.discover, "feature_row", spy)
+
+    quantiles = service.ml_quantiles(data)
+
+    assert quantiles is not None
+    assert set(quantiles) == {(lev, h) for lev in LEVELS for h in HORIZONS}
+    assert quantiles[(5, 120)] == pytest.approx(
+        (0.05 + 0.12 + 0.25, 0.05 + 0.12 + 0.5, 0.05 + 0.12 + 0.75)
+    )
+    assert seen == [pd.Timestamp(rnd.t0)]

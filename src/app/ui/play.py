@@ -29,13 +29,25 @@ from app.game import (
     wait_lines,
 )
 from app.game_service import GameService, PoolMissingError, RoundData
+from app.ml import Recommendation, rank_buys, recommend
 from app.signals import EVENT_LABELS, signal_flags
 from app.theme import Theme
-from app.trading import HORIZONS, OPTIONS, Level, OptionCode, buy_option, k_locked, wait_option
+from app.trading import (
+    HORIZONS,
+    OPTIONS,
+    Level,
+    OptionCode,
+    buy_option,
+    horizon_of,
+    is_buy,
+    k_locked,
+    wait_option,
+)
 from app.ui.chart_panel import chart_panel
 from app.ui.context import PageContext
 
 _CARD_GRID = "grid grid-cols-1 md:grid-cols-3 gap-4"
+_ML_TOP = 3
 
 _BADGE_ICON: dict[BadgeTier, str] = {
     "optimal": "military_tech",
@@ -227,6 +239,7 @@ class ResolutionView:
                 self._badge(res)
                 self._table(res)
                 self._summary(stats)
+                self._ml_card(data)
             with ui.element("div").classes("gt-area-next").mark("resolution-next-pane"):
                 ui.button("Nächste Runde", on_click=self._next_round)
             with ui.element("div").classes("gt-area-stats").mark("resolution-stats-pane"):
@@ -297,6 +310,39 @@ class ResolutionView:
             "markierung": " · ".join(marks),
         }
 
+    def _ml_card(self, data: RoundData) -> None:
+        with ui.card().classes("gt-card").mark("ml-strategy"):
+            ui.label(f"ML-Strategie (Top {_ML_TOP})")
+            quantiles = self.page.service.ml_quantiles(data)
+            if quantiles is None:
+                ui.label("Kein ML-Modell verfügbar (`gt model train` ausführen).")
+                return
+            ui.label(f"Empfehlung: {_ml_option(recommend(quantiles))}")
+            columns = [
+                {"name": n, "label": label, "field": n}
+                for n, label in (
+                    ("rang", "Rang"),
+                    ("option", "Option"),
+                    ("g", "G"),
+                    ("p25", "P25"),
+                    ("p50", "P50"),
+                    ("p75", "P75"),
+                )
+            ]
+            rows = [
+                {
+                    "rang": i,
+                    "option": _ml_option(r),
+                    "g": pct(r.growth),
+                    "p25": pct(r.p25),
+                    "p50": pct(r.p50),
+                    "p75": pct(r.p75),
+                }
+                for i, r in enumerate(rank_buys(quantiles)[:_ML_TOP], start=1)
+            ]
+            ui.table(columns=columns, rows=rows, row_key="rang").mark("ml-strategy-table")
+            ui.label("Hinweis: Das Modell wurde auf dem Snapshot-Pool trainiert (In-Sample).")
+
     def _summary(self, stats: Stats) -> None:
         before = self.rnd.balance_before_cents or 0
         after = self.rnd.balance_after_cents or 0
@@ -307,3 +353,9 @@ class ResolutionView:
     def _next_round(self) -> None:
         self.page.service.start_round(self.user.id)
         self.page.render()
+
+
+def _ml_option(rec: Recommendation) -> str:
+    if is_buy(rec.option):
+        return f"{rec.option.value} · {rec.level.value}"
+    return f"Warten {horizon_of(rec.option)} Tage"

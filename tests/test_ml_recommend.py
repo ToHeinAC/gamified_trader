@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from app.ml import LEVELS, growth_score, predict_quantiles, recommend
+from app.ml import LEVELS, growth_score, predict_quantiles, rank_buys, recommend
 from app.trading import Level, OptionCode
 
 NEG = (-0.05, 0.0, 0.03)  # G < 0: mean(ln 0.95, 0, ln 1.03)
@@ -105,3 +105,22 @@ def test_predict_quantiles_sorts_crossed_predictions() -> None:
     assert (p50 <= p75).all()
     assert p25.tolist() == [0.1, 0.1, 0.1]
     assert p75.tolist() == [0.5, 0.5, 0.5]
+
+
+def test_rank_buys_orders_by_growth_with_tie_break() -> None:
+    q = _quantiles(
+        {
+            (5, 30): (0.0, 0.02, 0.05),
+            (1, 120): (0.01, 0.02, 0.03),
+            (5, 120): (0.01, 0.02, 0.03),
+        }
+    )
+    ranked = rank_buys(q)
+    assert len(ranked) == 6
+    assert [(r.option, r.level) for r in ranked[:3]] == [
+        (OptionCode.K30, Level.MITTEL),
+        (OptionCode.K120, Level.EINFACH),
+        (OptionCode.K120, Level.MITTEL),
+    ]
+    assert ranked[0].growth == pytest.approx(growth_score((0.0, 0.02, 0.05)))
+    assert (ranked[0].p25, ranked[0].p50, ranked[0].p75) == pytest.approx((0.0, 0.02, 0.05))

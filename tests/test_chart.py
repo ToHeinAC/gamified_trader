@@ -7,9 +7,13 @@ import pandas as pd
 import pytest
 
 from app.chart import (
+    BB_COLOR,
+    ENTRY_COLOR,
+    ENTRY_LINE_COLOR,
     MAX_WINDOW,
     PRESETS,
     START_PRESET,
+    TP_LINE_COLOR,
     TRACE_NAMES,
     add_preview,
     apply_preset,
@@ -18,12 +22,13 @@ from app.chart import (
     build_resolution_figure,
     decision_window,
     discover_window,
+    exit_marker,
     resolution_window,
 )
 from app.game import SnapshotBars, resolve, setting_for
 from app.indicators import with_indicators
 from app.theme import DARK, LIGHT
-from app.trading import DEFAULT_COSTS, Level, OptionCode, make_card
+from app.trading import DEFAULT_COSTS, ExitReason, Level, OptionCode, make_card
 from tests.helpers import make_bars, random_walk_bars
 
 
@@ -205,6 +210,71 @@ def test_resolution_figure() -> None:
     assert any(s.get("x0") == 0.5 for s in shapes)
     einstieg = next(t for t in d["data"] if t["name"] == "Einstieg")
     assert list(einstieg["x"]) == [1]
+
+
+def test_bollinger_upper_lower_are_solid_gray() -> None:
+    fig = build_figure(_window(400), LIGHT)
+    for name in ("BB oben", "BB unten"):
+        line = _trace(fig, name)["line"]
+        assert line["color"] == BB_COLOR
+        assert line.get("dash", "solid") == "solid"
+
+
+def test_preview_entry_and_tp_lines() -> None:
+    fig = build_figure(_window(400), LIGHT)
+    card = make_card(30, 100.0, 2.0, Decimal("10000.00"), 1, DEFAULT_COSTS)
+
+    add_preview(fig, OptionCode.K30, card, LIGHT)
+
+    entry = _trace(fig, "Vorschau Einstieg")
+    assert entry["line"]["color"] == ENTRY_LINE_COLOR
+    assert entry["line"].get("dash", "solid") == "solid"
+    assert all(y == pytest.approx(float(card.p0)) for y in entry["y"])
+    tp = _trace(fig, "Vorschau TP")
+    assert tp["line"]["color"] == TP_LINE_COLOR
+    assert tp["line"].get("dash", "solid") == "solid"
+
+
+@pytest.mark.parametrize(
+    ("reason", "pnl", "symbol", "color"),
+    [
+        (ExitReason.TIME, Decimal("5"), "circle", LIGHT.up),
+        (ExitReason.TIME, Decimal("-5"), "circle", LIGHT.down),
+        (ExitReason.TP, Decimal("5"), "square", LIGHT.up),
+        (ExitReason.SL, Decimal("-5"), "square", LIGHT.down),
+        (ExitReason.KO, Decimal("-5"), "square", LIGHT.down),
+        (ExitReason.TIME, Decimal("0"), "circle", LIGHT.down),
+    ],
+)
+def test_exit_marker(reason: ExitReason, pnl: Decimal, symbol: str, color: str) -> None:
+    assert exit_marker(reason, pnl, LIGHT) == (symbol, color)
+
+
+def test_resolution_markers_style() -> None:
+    from app.db import UserRow
+
+    ind = with_indicators(random_walk_bars(500, seed=0))
+    t0_idx = 300
+    user = UserRow(1, "Test", 1_000_000, 1_000_000, 5, 10, 50, 20)
+    snap = SnapshotBars(
+        p0=float(ind["close"].iloc[t0_idx]),
+        atr=float(ind["atr14"].iloc[t0_idx]),
+        future=ind[["open", "high", "low", "close"]]
+        .iloc[t0_idx + 1 : t0_idx + 121]
+        .to_numpy()
+        .tolist(),
+    )
+    res = resolve(snap, setting_for(user, Level.EINFACH), OptionCode.K30)
+
+    fig = build_resolution_figure(resolution_window(ind, t0_idx), LIGHT, res)
+    entry = _trace(fig, "Einstieg")
+    assert entry["marker"]["symbol"] == "triangle-up"
+    assert entry["marker"]["color"] == ENTRY_COLOR
+    result = res.results[30]
+    symbol, color = exit_marker(result.reason, result.pnl, LIGHT)
+    ausstieg = _trace(fig, "Ausstieg")
+    assert ausstieg["marker"]["symbol"] == symbol
+    assert ausstieg["marker"]["color"] == color
 
 
 def test_discover_window_keeps_dates_and_length() -> None:

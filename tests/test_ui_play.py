@@ -4,14 +4,20 @@ import sqlite3
 from collections.abc import AsyncIterator
 from pathlib import Path
 
+import numpy as np
+import pandas as pd
 import pytest
 from nicegui import ui
 from nicegui.testing import User, user_simulation
 
-from app import universe
+from app import discover_service, universe
 from app.config import load_config
 from app.db import Database
+from app.discover import ModelBundle
+from app.features import FEATURE_COLUMNS
 from app.fmt import date_de
+from app.market import MARKET_COLUMNS
+from app.ml import HORIZONS, LEVELS, QUANTILES
 from app.settings_rules import UserSettings
 from app.ui.root import root
 from tests.helpers import make_game_env
@@ -154,6 +160,52 @@ async def test_resolution_shows_result_badge(gt_user: User, tmp_path: Path) -> N
         "schlecht": "Nicht optimal",
     }[tier]
     await gt_user.should_see(label)
+
+
+class _FakeModel:
+    def __init__(self, value: float) -> None:
+        self.value = value
+
+    def predict(self, x: pd.DataFrame) -> np.ndarray[tuple[int], np.dtype[np.float64]]:
+        return np.full(len(x), self.value, dtype=np.float64)
+
+
+async def test_resolution_shows_ml_top3(
+    gt_user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    make_game_env(tmp_path, seed=8)
+    models = {
+        (lev, h, q): _FakeModel(0.01 * lev + h / 1000 + q / 10)
+        for lev in LEVELS
+        for h in HORIZONS
+        for q in QUANTILES
+    }
+    bundle = ModelBundle(models=models, meta={"feature_columns": list(FEATURE_COLUMNS)})
+    dates = pd.date_range("1990-01-01", "2030-12-31", freq="D", name="date")
+    market = pd.DataFrame({c: 0.0 for c in MARKET_COLUMNS}, index=dates)
+    monkeypatch.setattr(discover_service, "load_bundle", lambda c: bundle)
+    monkeypatch.setattr(discover_service, "load_market", lambda c: market)
+
+    await gt_user.open("/")
+    gt_user.find(marker="pick-W10").click()
+    gt_user.find(marker="confirm").click()
+
+    await gt_user.should_see("ML-Strategie")
+    table = next(iter(gt_user.find(marker="ml-strategy-table").elements))
+    assert isinstance(table, ui.table)
+    rows = table.rows
+    assert [r["option"] for r in rows] == ["K120 · Mittel", "K120 · Einfach", "K30 · Mittel"]
+    assert [r["rang"] for r in rows] == [1, 2, 3]
+    await gt_user.should_see("Empfehlung: K120 · Mittel")
+
+
+async def test_resolution_ml_hint_without_model(gt_user: User, tmp_path: Path) -> None:
+    make_game_env(tmp_path, seed=8)
+    await gt_user.open("/")
+    gt_user.find(marker="pick-W10").click()
+    gt_user.find(marker="confirm").click()
+
+    await gt_user.should_see("Kein ML-Modell verfügbar")
 
 
 async def test_reload_keeps_the_round(gt_user: User, tmp_path: Path) -> None:
