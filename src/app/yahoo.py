@@ -52,6 +52,21 @@ def split_download(raw: pd.DataFrame, tickers: Sequence[str]) -> dict[str, pd.Da
     return result
 
 
+def fetch_history(ticker: str) -> pd.DataFrame | None:
+    """Full daily history (period="max"), normalized, uncleaned; None if Yahoo has nothing."""
+    return fetch_batch([ticker], None).get(ticker)
+
+
+def fetch_quote_type(ticker: str) -> str | None:
+    """yf.Ticker(ticker).info's quoteType, upper-cased; None on any exception or missing key."""
+    try:
+        info = yf.Ticker(ticker).info
+    except Exception:
+        return None
+    quote_type = info.get("quoteType")
+    return str(quote_type).upper() if quote_type else None
+
+
 def normalize_frame(sub: pd.DataFrame) -> pd.DataFrame:
     df = sub.rename(columns=str.lower)
     for field in FIELDS:

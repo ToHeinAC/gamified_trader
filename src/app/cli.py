@@ -8,6 +8,7 @@ from typing import cast
 
 from app import data_sync, market, ml, model_store, pool, pool_store, yahoo
 from app.config import Config, load_config
+from app.fmt import date_de
 from app.price_store import PriceStore
 from app.universe import load_universe
 
@@ -16,6 +17,16 @@ def _tickers_or_universe(tickers: Sequence[str] | None) -> list[str]:
     if tickers:
         return list(tickers)
     return [entry.ticker for entry in load_universe()]
+
+
+def _refresh_market(cfg: Config, store: PriceStore) -> None:
+    """Rewrites data/market.parquet from the price store so Entdecken (M8) stays current."""
+    tickers = store.tickers()
+    if not tickers:
+        return
+    mkt = market.market_frame(tickers, store.read)
+    model_store.write_market(mkt, cfg.market_parquet)
+    print(f"Markttabelle bis {date_de(mkt.index.max())}")
 
 
 def _data_download(args: argparse.Namespace) -> int:
@@ -29,6 +40,7 @@ def _data_download(args: argparse.Namespace) -> int:
         pause_s=cfg.yahoo_pause_s,
     )
     print(report.render())
+    _refresh_market(cfg, store)
     return report.exit_code()
 
 
@@ -42,6 +54,7 @@ def _data_update(_args: argparse.Namespace) -> int:
         pause_s=cfg.yahoo_pause_s,
     )
     print(report.render())
+    _refresh_market(cfg, store)
     return report.exit_code()
 
 

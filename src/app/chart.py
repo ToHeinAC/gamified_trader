@@ -157,15 +157,26 @@ def build_figure(window: pd.DataFrame, theme: Theme) -> go.Figure:
     return fig
 
 
-def preset_ranges(
-    window: pd.DataFrame, preset: str
-) -> tuple[tuple[float, float], tuple[float, float]]:
+XRange = tuple[float, float] | tuple[pd.Timestamp, pd.Timestamp]
+_HALF_DAY = pd.Timedelta(hours=12)
+
+
+def _x_range(vis: pd.DataFrame, n: int) -> XRange:
+    if pd.api.types.is_datetime64_any_dtype(vis["x"]):
+        return (
+            pd.Timestamp(vis["x"].iloc[0]) - _HALF_DAY,
+            pd.Timestamp(vis["x"].iloc[-1]) + _HALF_DAY,
+        )
+    x_last = float(vis["x"].iloc[-1])
+    return (x_last - n + 0.5, x_last + 0.5)
+
+
+def preset_ranges(window: pd.DataFrame, preset: str) -> tuple[XRange, tuple[float, float]]:
     n = min(PRESETS[preset], len(window))
     vis = window.tail(n)
-    x_last = float(vis["x"].iloc[-1])
     lo = float(np.nanmin(np.minimum(vis["low"], vis["bb_lower"])))
     hi = float(np.nanmax(np.maximum(vis["high"], vis["bb_upper"])))
-    return (x_last - n + 0.5, x_last + 0.5), (lo * (1 - Y_PAD), hi * (1 + Y_PAD))
+    return _x_range(vis, n), (lo * (1 - Y_PAD), hi * (1 + Y_PAD))
 
 
 def apply_preset(fig: go.Figure, window: pd.DataFrame, preset: str) -> None:
@@ -251,4 +262,29 @@ def build_resolution_figure(window: pd.DataFrame, theme: Theme, res: Resolution)
 
     n = PRESETS["1J"]
     fig.update_xaxes(range=[-(n - 0.5), 120.5])
+    return fig
+
+
+def discover_window(ind: pd.DataFrame) -> pd.DataFrame:
+    """Last min(1260, len) rows; KEEPS date; x = date (datetime64). No leak rules apply (M8)."""
+    n = min(MAX_WINDOW, len(ind))
+    window = ind.iloc[-n:].copy()
+    window["x"] = window["date"]
+    return window.reset_index(drop=True)
+
+
+def _missing_days(dates: pd.Series) -> list[str]:
+    """Every calendar day between the first and last bar that has no bar (weekends/holidays)."""
+    normalized = pd.DatetimeIndex(dates).normalize()
+    full_range = pd.date_range(normalized.min(), normalized.max(), freq="D")
+    present = set(normalized)
+    return [d.strftime("%Y-%m-%d") for d in full_range if d not in present]
+
+
+def build_discover_figure(window: pd.DataFrame, theme: Theme, ticker: str, name: str) -> go.Figure:
+    fig = build_figure(window, theme)
+    fig.update_layout(title=f"{ticker} · {name}")
+    missing = _missing_days(window["x"])
+    if missing:
+        fig.update_xaxes(rangebreaks=[{"values": missing}])
     return fig

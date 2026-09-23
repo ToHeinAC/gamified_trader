@@ -9,6 +9,7 @@ from app.config import Config, load_config
 from app.db import Database
 from app.theme import page_css
 from app.ui.context import PageContext
+from app.ui.discover import discover_page
 from app.ui.play import play_page
 from app.ui.setup import setup_page
 
@@ -26,7 +27,13 @@ def root() -> None:
     ctx = PageContext(cfg=cfg, db=db, dark=dark)
     ctx.refresh_user_name()
     _header(ctx)
-    ui.sub_pages({"/": lambda: play_page(ctx), "/setup": lambda: setup_page(ctx)})
+    ui.sub_pages(
+        {
+            "/": lambda: play_page(ctx),
+            "/entdecken": lambda: discover_page(ctx),
+            "/setup": lambda: setup_page(ctx),
+        }
+    )
 
 
 async def _resolve_system_theme(dark: ui.dark_mode) -> None:
@@ -38,6 +45,7 @@ def _header(ctx: PageContext) -> None:
     with ui.header().classes("gt-header"):
         ui.label("Gamified Trader")
         ui.link("Spielen", "/")
+        ui.link("Entdecken", "/entdecken")
         ui.link("Setup", "/setup")
         ui.label().bind_text_from(ctx, "user_name")
         ui.space()

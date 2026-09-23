@@ -29,6 +29,10 @@ class Config:
         return self.data_dir / "app.db"
 
     @property
+    def discover_dir(self) -> Path:
+        return self.data_dir / "discover"
+
+    @property
     def features_parquet(self) -> Path:
         return self.data_dir / "features.parquet"
 

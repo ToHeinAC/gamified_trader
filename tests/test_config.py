@@ -12,6 +12,7 @@ def test_defaults() -> None:
     assert cfg.snapshots_parquet == Path("data") / "snapshots.parquet"
     assert cfg.snapshots_json == Path("data") / "snapshots.json"
     assert cfg.db_path == Path("data") / "app.db"
+    assert cfg.discover_dir == Path("data") / "discover"
 
 
 def test_env_override() -> None:

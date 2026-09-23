@@ -3,17 +3,21 @@ import re
 from decimal import Decimal
 
 import numpy as np
+import pandas as pd
 import pytest
 
 from app.chart import (
+    MAX_WINDOW,
     PRESETS,
     START_PRESET,
     TRACE_NAMES,
     add_preview,
     apply_preset,
+    build_discover_figure,
     build_figure,
     build_resolution_figure,
     decision_window,
+    discover_window,
     resolution_window,
 )
 from app.game import SnapshotBars, resolve, setting_for
@@ -201,3 +205,71 @@ def test_resolution_figure() -> None:
     assert any(s.get("x0") == 0.5 for s in shapes)
     einstieg = next(t for t in d["data"] if t["name"] == "Einstieg")
     assert list(einstieg["x"]) == [1]
+
+
+def test_discover_window_keeps_dates_and_length() -> None:
+    ind = with_indicators(random_walk_bars(300, seed=1))
+    window = discover_window(ind)
+    assert "date" in window.columns
+    assert window["x"].dtype.kind == "M"
+    assert len(window) == min(MAX_WINDOW, len(ind))
+    assert (window["x"] == window["date"]).all()
+
+
+def test_discover_figure_title_and_dates() -> None:
+    bars = random_walk_bars(300, seed=5)
+    window = discover_window(with_indicators(bars))
+    fig = build_discover_figure(window, LIGHT, "AAPL", "Apple Inc.")
+    assert fig.layout.title.text == "AAPL · Apple Inc."
+    candle = _trace(fig, "Kurs")
+    assert pd.Timestamp(candle["x"][0]) == window["x"].iloc[0]
+
+
+def test_discover_figure_rangebreaks_hide_missing_days() -> None:
+    raw = random_walk_bars(60, seed=2, start="2024-01-02")
+    holiday = raw["date"].iloc[10]
+    bars = raw.drop(index=10).reset_index(drop=True)
+    window = discover_window(with_indicators(bars))
+
+    fig = build_discover_figure(window, LIGHT, "AAA", "AAA Inc.")
+
+    values = set(fig.layout.xaxis.rangebreaks[0].values)
+    assert holiday.strftime("%Y-%m-%d") in values
+    some_saturday = (window["x"].iloc[0] + pd.offsets.Week(weekday=5)).normalize()
+    assert some_saturday.strftime("%Y-%m-%d") in values
+    bar_days = set(window["x"].dt.strftime("%Y-%m-%d"))
+    assert not (values & bar_days)
+
+
+def test_discover_figure_seven_day_week_has_no_rangebreaks() -> None:
+    dates = pd.date_range("2024-01-01", periods=40, freq="D")
+    bars = make_bars([100.0 + i * 0.1 for i in range(40)]).assign(
+        date=pd.DatetimeIndex(dates).astype("datetime64[ns]")
+    )
+    window = discover_window(with_indicators(bars))
+    fig = build_discover_figure(window, LIGHT, "BTC-USD", "Bitcoin")
+    assert not fig.layout.xaxis.rangebreaks
+
+
+def test_discover_preset_sets_date_range() -> None:
+    bars = random_walk_bars(300, seed=3)
+    window = discover_window(with_indicators(bars))
+    fig = build_discover_figure(window, LIGHT, "AAA", "AAA Inc.")
+
+    apply_preset(fig, window, "3M")
+
+    n = min(PRESETS["3M"], len(window))
+    vis = window.tail(n)
+    expected_start = vis["x"].iloc[0] - pd.Timedelta(hours=12)
+    expected_end = vis["x"].iloc[-1] + pd.Timedelta(hours=12)
+    x_range = fig.layout.xaxis.range
+    assert pd.Timestamp(x_range[0]) == expected_start
+    assert pd.Timestamp(x_range[1]) == expected_end
+
+
+def test_game_figures_unaffected_by_date_aware_presets() -> None:
+    window = _window(400)
+    fig = build_figure(window, LIGHT)
+    fig_json = fig.to_json(engine="json")
+    assert fig_json is not None
+    assert not re.search(r"\d{4}-\d{2}-\d{2}", fig_json)

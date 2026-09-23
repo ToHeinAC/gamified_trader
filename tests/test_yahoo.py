@@ -5,6 +5,7 @@ import pytest
 from app import yahoo
 from app.cleaning import clean_prices
 from app.price_store import PriceStore
+from tests.helpers import make_bars
 
 
 def _shape1(index: pd.DatetimeIndex, values: dict[str, list[float]]) -> pd.DataFrame:
@@ -116,3 +117,48 @@ def test_period_vs_start(monkeypatch: pytest.MonkeyPatch) -> None:
     assert "start" not in calls[0]
     assert calls[1]["start"] == "2024-01-03"
     assert "period" not in calls[1]
+
+
+class _FakeTicker:
+    def __init__(self, info: dict[str, object] | None = None, raises: bool = False) -> None:
+        self._info = info
+        self._raises = raises
+
+    @property
+    def info(self) -> dict[str, object]:
+        if self._raises:
+            raise RuntimeError("boom")
+        return self._info or {}
+
+
+def test_fetch_quote_type_upper_cases(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(yahoo.yf, "Ticker", lambda _t: _FakeTicker({"quoteType": "etf"}))
+    assert yahoo.fetch_quote_type("SPY") == "ETF"
+
+
+def test_fetch_quote_type_missing_key_is_none(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(yahoo.yf, "Ticker", lambda _t: _FakeTicker({}))
+    assert yahoo.fetch_quote_type("AAPL") is None
+
+
+def test_fetch_quote_type_exception_is_none(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(yahoo.yf, "Ticker", lambda _t: _FakeTicker(raises=True))
+    assert yahoo.fetch_quote_type("ZZZ") is None
+
+
+def test_fetch_history_returns_the_single_ticker_frame(monkeypatch: pytest.MonkeyPatch) -> None:
+    df = make_bars([10.0, 11.0])
+
+    def fake_fetch_batch(tickers, start):
+        assert start is None
+        return {tickers[0]: df}
+
+    monkeypatch.setattr(yahoo, "fetch_batch", fake_fetch_batch)
+    result = yahoo.fetch_history("AAPL")
+    assert result is not None
+    assert result["close"].tolist() == df["close"].tolist()
+
+
+def test_fetch_history_none_when_absent(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(yahoo, "fetch_batch", lambda tickers, start: {})
+    assert yahoo.fetch_history("ZZZ") is None
