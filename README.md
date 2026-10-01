@@ -70,6 +70,15 @@ In this repository (every clone gets them):
 - `/commit-git`: small Conventional Commits through the gate. Only you can invoke it, and it never pushes without asking.
 - `/documentation-update`: brings the docs in line with the code since the last commit.
 
+Enabled as plugins in `.claude/settings.json` (Claude Code asks to install them when you trust the
+folder; nothing is vendored):
+
+- `frontend-design` from [anthropics/claude-code](https://github.com/anthropics/claude-code/tree/main/plugins/frontend-design):
+  distinctive, production-grade frontend UIs.
+- `ui-ux-pro-max` from [nextlevelbuilder/ui-ux-pro-max-skill](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill)
+  (MIT): UI/UX design data and search, plus the `ui-styling`, `design`, `design-system`, `brand`,
+  `banner-design` and `slides` skills.
+
 Not in this repository:
 
 - `first-principles-mindmap` (writes `MINDMAP.md`) and `prd-from-mindmap` (writes `PRD.md`) are
