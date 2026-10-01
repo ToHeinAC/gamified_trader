@@ -394,6 +394,20 @@ class Database:
             "UPDATE users SET balance_cents = ? WHERE id = ?", (o.balance_after_cents, user_id)
         )
 
+    def balance_history(self, user_id: int, limit: int = 20) -> list[int]:
+        """Balances in cents after each of the last `limit` finished rounds, led by the balance
+        before the first of them. Empty without finished rounds."""
+        with closing(self._connect()) as conn:
+            rows = conn.execute(
+                "SELECT balance_before_cents AS before, balance_after_cents AS after "
+                "FROM rounds WHERE user_id = ? AND status = 'done' ORDER BY id DESC LIMIT ?",
+                (user_id, limit),
+            ).fetchall()
+        if not rows:
+            return []
+        rows.reverse()
+        return [rows[0]["before"], *(r["after"] for r in rows)]
+
     def stats(self, user_id: int) -> Stats:
         with closing(self._connect()) as conn:
             user_row = conn.execute(

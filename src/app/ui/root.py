@@ -42,15 +42,21 @@ async def _resolve_system_theme(dark: ui.dark_mode) -> None:
 
 
 def _header(ctx: PageContext) -> None:
-    with ui.header().classes("gt-header"):
-        ui.label("Gamified Trader")
+    with ui.header().classes("gt-header items-center"):
+        ui.label("Gamified Trader").classes("gt-brand")
         ui.link("Spielen", "/")
         ui.link("Entdecken", "/entdecken")
         ui.link("Setup", "/setup")
         ui.label().bind_text_from(ctx, "user_name")
         ui.space()
-        ui.button("Hell/Dunkel", on_click=lambda: ctx.dark.set_value(not bool(ctx.dark.value)))
-        ui.button("App beenden", on_click=lambda: nicegui_app.shutdown())
+        ui.button(
+            "Hell/Dunkel",
+            icon="contrast",
+            on_click=lambda: ctx.dark.set_value(not bool(ctx.dark.value)),
+        ).props("flat")
+        ui.button(
+            "App beenden", icon="power_settings_new", on_click=lambda: nicegui_app.shutdown()
+        ).props("flat")
 
 
 def run_app(cfg: Config) -> None:

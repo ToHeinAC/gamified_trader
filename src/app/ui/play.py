@@ -14,7 +14,7 @@ from app.chart import (
     resolution_window,
 )
 from app.db import RoundRow, Stats, UserRow
-from app.fmt import cents_eur, date_de, pct
+from app.fmt import cents_eur, date_de, eur, pct
 from app.fmt import points as fmt_points
 from app.game import (
     BadgeTier,
@@ -31,6 +31,7 @@ from app.game import (
 from app.game_service import GameService, PoolMissingError, RoundData
 from app.ml import Recommendation, rank_buys, recommend
 from app.signals import EVENT_LABELS, signal_flags
+from app.sparkline import sparkline_path
 from app.theme import Theme
 from app.trading import (
     HORIZONS,
@@ -46,8 +47,10 @@ from app.trading import (
 from app.ui.chart_panel import chart_panel
 from app.ui.context import PageContext
 
-_CARD_GRID = "grid grid-cols-1 md:grid-cols-3 gap-4"
+_CARD_GRID = "grid grid-cols-1 md:grid-cols-3 gap-3"
+_BUY_GRID = "grid grid-cols-1 md:grid-cols-3 lg:grid-cols-1 gap-3"
 _ML_TOP = 3
+_SPARK_W, _SPARK_H = 120, 32
 
 _BADGE_ICON: dict[BadgeTier, str] = {
     "optimal": "military_tech",
@@ -89,7 +92,7 @@ class PlayPage:
 
         if rnd.status == "open":
             stats = self.ctx.db.stats(user.id)
-            _tiles(user, stats, rnd)
+            _tiles(user, stats, rnd, self.ctx.db.balance_history(user.id))
             DecisionView(self, user, rnd)
             _stats_card(stats)
         else:
@@ -100,14 +103,38 @@ def play_page(ctx: PageContext) -> None:
     PlayPage(ctx)
 
 
-def _tiles(user: UserRow, stats: Stats, rnd: RoundRow) -> None:
-    with ui.row().classes("flex flex-col md:flex-row gap-4"):
-        with ui.card().classes("gt-card"):
-            ui.label(f"Guthaben: {cents_eur(user.balance_cents)}")
-        with ui.card().classes("gt-card"):
-            ui.label(f"Punkte gesamt: {fmt_points(stats.points_total)}")
-        with ui.card().classes("gt-card"):
-            ui.label(f"Runde: {round_number(stats.rounds, rnd.status == 'open')}")
+def _tile(marker: str, icon: str, label: str, value: str) -> ui.element:
+    with ui.element("div").classes("gt-tile").mark(marker) as tile:
+        with ui.element("div").classes("gt-tile-head"):
+            ui.icon(icon).classes("gt-tile-icon")
+            ui.label(label).classes("gt-tile-label")
+        ui.label(value).classes("gt-tile-value")
+    return tile
+
+
+def _sparkline(history: list[int]) -> None:
+    path = sparkline_path(history, _SPARK_W, _SPARK_H)
+    if not path:
+        return
+    trend = "gt-spark-up" if history[-1] >= history[0] else "gt-spark-down"
+    svg = (
+        f'<svg viewBox="0 0 {_SPARK_W} {_SPARK_H}" class="gt-spark {trend}" '
+        'preserveAspectRatio="none" role="img" '
+        f'aria-label="Guthabenverlauf der letzten Runden"><path d="{path}" fill="none" '
+        'stroke="currentColor" stroke-width="2" stroke-linecap="round" '
+        'stroke-linejoin="round" vector-effect="non-scaling-stroke"/></svg>'
+    )
+    ui.html(svg, sanitize=False).mark("balance-sparkline")
+
+
+def _tiles(user: UserRow, stats: Stats, rnd: RoundRow, history: list[int]) -> None:
+    with ui.element("div").classes("gt-tiles"):
+        with _tile(
+            "tile-balance", "account_balance_wallet", "Guthaben", cents_eur(user.balance_cents)
+        ):
+            _sparkline(history)
+        _tile("tile-points", "stars", "Punkte gesamt", fmt_points(stats.points_total))
+        _tile("tile-round", "flag", "Runde", str(round_number(stats.rounds, rnd.status == "open")))
 
 
 def _stats_card(stats: Stats) -> None:
@@ -184,27 +211,46 @@ class DecisionView:
         chart_panel(self.page.ctx, self.window, make_figure, presets=True)
 
     def _option_cards(self, cards: dict[OptionCode, Card], setting: Setting, locked: bool) -> None:
+        with ui.element("div").classes(_BUY_GRID):
+            for horizon in HORIZONS:
+                self._buy_card(cards[buy_option(horizon)], setting, disabled=locked)
         with ui.element("div").classes(_CARD_GRID):
             for horizon in HORIZONS:
-                card = cards[buy_option(horizon)]
-                self._option_card(card.option, card_lines(card, setting), disabled=locked)
-        with ui.element("div").classes(_CARD_GRID):
-            for horizon in HORIZONS:
-                self._option_card(wait_option(horizon), wait_lines(horizon), disabled=False)
+                self._wait_card(horizon)
 
-        confirm_btn = ui.button("Entscheidung bestätigen").mark("confirm")
+        confirm_btn = ui.button("Entscheidung bestätigen").classes("gt-confirm").mark("confirm")
         confirm_btn.on_click(lambda: self._confirm(confirm_btn))
         confirm_btn.set_enabled(self.selected is not None)
 
-    def _option_card(self, option: OptionCode, lines: list[str], *, disabled: bool) -> None:
-        classes = "gt-card" + (" gt-selected" if self.selected == option else "")
-        with ui.card().classes(classes):
-            for line in lines:
-                ui.label(line)
-            btn = ui.button("Auswählen", on_click=lambda: self._pick(option))
-            btn.mark(f"pick-{option.value}")
-            if disabled:
-                btn.disable()
+    def _card_frame(self, option: OptionCode) -> ui.card:
+        selected = " gt-selected" if self.selected == option else ""
+        return ui.card().classes(f"gt-card gt-option{selected}")
+
+    def _pick_button(self, option: OptionCode, *, disabled: bool) -> None:
+        btn = ui.button("Auswählen", on_click=lambda: self._pick(option)).props("flat")
+        btn.mark(f"pick-{option.value}")
+        if disabled:
+            btn.disable()
+
+    def _buy_card(self, card: Card, setting: Setting, *, disabled: bool) -> None:
+        lines = card_lines(card, setting)
+        with self._card_frame(card.option):
+            ui.label(card.option.value).classes("gt-card-title")
+            ui.label(f"{card.horizon} Tage · {setting.level.value}").classes("gt-card-sub")
+            _risk_bar(card)
+            ui.label(lines[1]).classes("gt-card-note")
+            with ui.expansion("Details").classes("gt-details").mark(f"details-{card.option.value}"):
+                for line in lines[2:-1]:
+                    ui.label(line).classes("gt-card-note")
+            self._pick_button(card.option, disabled=disabled)
+
+    def _wait_card(self, horizon: int) -> None:
+        option = wait_option(horizon)
+        title, note = wait_lines(horizon)
+        with self._card_frame(option):
+            ui.label(title).classes("gt-card-title")
+            ui.label(note).classes("gt-card-note")
+            self._pick_button(option, disabled=False)
 
     def _confirm(self, btn: ui.button) -> None:
         if self.selected is None:
@@ -212,6 +258,21 @@ class DecisionView:
         btn.disable()
         self.page.service.confirm(self.user, self.rnd, self.level, self.selected)
         self.page.render()
+
+
+def _risk_bar(card: Card) -> None:
+    """Loss-to-gain bar at the fixed 1 : 2 CRV, with the two money figures beneath."""
+    with ui.element("div").classes("gt-risk").mark(f"risk-{card.option.value}"):
+        with ui.element("div").classes("gt-risk-bar"):
+            ui.element("div").classes("gt-risk-loss")
+            ui.element("div").classes("gt-risk-gain")
+        for text, value, tone in (
+            ("Verlust bei SL", card.loss_at_sl, "gt-down"),
+            ("Gewinn bei TP", card.gain_at_tp, "gt-up"),
+        ):
+            with ui.element("div").classes("gt-risk-figure"):
+                ui.label(text).classes("gt-card-note")
+                ui.label(eur(value)).classes(f"gt-risk-value {tone}")
 
 
 class ResolutionView:
@@ -229,7 +290,7 @@ class ResolutionView:
 
         with ui.element("div").classes("w-full gt-resolution-grid").mark("resolution-layout"):
             with ui.element("div").classes("gt-area-tiles gt-pop-in").mark("resolution-tiles-pane"):
-                _tiles(self.user, stats, self.rnd)
+                _tiles(self.user, stats, self.rnd, self.page.ctx.db.balance_history(self.user.id))
             self._chart_pane(data, res)
             with (
                 ui.element("div")

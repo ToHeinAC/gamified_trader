@@ -51,7 +51,7 @@ Release 1: start with [docs/spec-common.md](docs/spec-common.md), then the miles
 | `src/app/chart.py` | `decision_window`/`resolution_window` (leak-proof, drop `date`), `discover_window`/`build_discover_figure` (real dates, M8), `build_figure`, `build_resolution_figure` + `exit_marker`, `add_preview`, presets (R2), chart color constants. |
 | `src/app/ui/root.py` | App shell: header, theme resolution, routing (`root()`, `run_app()`); links Spielen/Entdecken/Setup. |
 | `src/app/ui/chart_panel.py` | `ui.plotly` panel from a figure factory; optional preset buttons. |
-| `src/app/ui/play.py` | Page "Spielen": `PlayPage`/`DecisionView`/`ResolutionView` (incl. ML-Strategie top-3 card), the full round loop. |
+| `src/app/ui/play.py` | Page "Spielen": `PlayPage`/`DecisionView`/`ResolutionView` (incl. ML-Strategie top-3 card), stat tiles with sparkline, option cards with risk bar, the full round loop. |
 | `src/app/trading.py` | `make_card(s)`, `simulate(_all)`, `option_values`/`points`/`label`/`book`: R3–R9, pure Decimal math. |
 | `src/app/signals.py` | `signal_flags`: 9 technical event flags per bar (R11). |
 | `src/app/eligibility.py` | `eligible_mask`: R10 candidate mask per bar. |
@@ -59,7 +59,8 @@ Release 1: start with [docs/spec-common.md](docs/spec-common.md), then the miles
 | `src/app/pool_store.py` | `write_pool`/`read_pool`/`read_meta`: `snapshots.parquet` + `snapshots.json`. |
 | `src/app/settings_rules.py` | Pure validation for the Setup form (names, capital, leverage, rates). |
 | `src/app/fmt.py` | German number/money/date formatting for the UI. |
-| `src/app/db.py` | `Database`: SQLite users/settings/resets/active-user (`data/app.db`). |
+| `src/app/db.py` | `Database`: SQLite users/settings/resets/active-user, `balance_history` (`data/app.db`). |
+| `src/app/sparkline.py` | `sparkline_path`: pure SVG path for the balance sparkline. |
 | `src/app/ui/context.py` | `PageContext`: per-client `Config`/`Database`/theme/user name shared by pages. |
 | `src/app/ui/setup.py` | Page "Setup": create/select users, edit settings, reset balance. |
 | `src/app/game.py` | Pure: `draw_snapshot`, `Setting`, `card_lines`, `resolve`, `outcome`, `round_number`, `badge_tier` (R1–R9, D7, D9). |
@@ -239,3 +240,8 @@ Release 1: start with [docs/spec-common.md](docs/spec-common.md), then the miles
   The card needs `data/models/` and `data/market.parquet` (`gt model train`); on 2026-09-23 the
   repo's `data/` had neither, so there the app shows the "Kein ML-Modell verfügbar" hint. Marker
   and line colors need a manual browser check (no browser in this environment).
+- Spielen UI refresh (2026-10-01): UI polish, no PRD change; details in
+  [docs/architecture.md](docs/architecture.md#spielen-ui-refresh-2026-10-01). PRD palette tokens are
+  unchanged (pinned by `test_theme.py`). Verified by headless Chromium (light/dark, 1440/390 px).
+  The Quasar primary colour on buttons still renders as NiceGUI's default blue, not the PRD
+  `primary` token (pre-existing; not addressed).

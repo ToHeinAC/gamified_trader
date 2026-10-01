@@ -118,3 +118,39 @@ def test_play_counts_and_stats(tmp_path: Path) -> None:
     assert stats.points_avg == 75.0
     assert stats.optimal_share == 0.5
     assert stats.resets == 0
+
+
+def _done_round(db: Database, user_id: int, after: int, day: int) -> None:
+    rnd = db.insert_open_round(user_id, f"s{day}", "ZZA", date(2020, 5, day), NOW)
+    db.confirm_round(rnd.id, user_id, lambda _b: _Outcome(balance_after_cents=after), NOW)
+
+
+def test_balance_history_empty_without_finished_rounds(tmp_path: Path) -> None:
+    db = Database(tmp_path / "app.db")
+    db.init()
+    user_id = db.create_user("Anna", 10_000, NOW)
+
+    assert db.balance_history(user_id) == []
+
+
+def test_balance_history_starts_at_first_balance_before_and_follows_each_round(
+    tmp_path: Path,
+) -> None:
+    db = Database(tmp_path / "app.db")
+    db.init()
+    user_id = db.create_user("Anna", 10_000, NOW)
+    _done_round(db, user_id, 1_050_000, 4)
+    _done_round(db, user_id, 1_020_000, 5)
+
+    assert db.balance_history(user_id) == [1_000_000, 1_050_000, 1_020_000]
+
+
+def test_balance_history_keeps_only_the_last_rounds(tmp_path: Path) -> None:
+    db = Database(tmp_path / "app.db")
+    db.init()
+    user_id = db.create_user("Anna", 10_000, NOW)
+    _done_round(db, user_id, 200, 4)
+    _done_round(db, user_id, 300, 5)
+    _done_round(db, user_id, 400, 6)
+
+    assert db.balance_history(user_id, limit=2) == [200, 300, 400]

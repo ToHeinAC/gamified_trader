@@ -338,6 +338,24 @@ pool-feature files are cached per `(path, mtime_ns)` (`functools.lru_cache`, mir
 [M8](spec-m8-discover.md); manual network check pending, see
 [IMPLEMENTATION.md](../IMPLEMENTATION.md#4-open-issues).
 
+## Spielen UI refresh (2026-10-01)
+
+Direction "clean fintech", CSS-first, palette tokens untouched (`theme.py`, pinned by the PRD).
+
+- **Tokens and type**: derived CSS variables `--gt-border`, `--gt-muted` (text colour mixed toward the
+  surface, ≥ 4.5:1) and `--gt-up-text`/`--gt-down-text` (darker in light mode for text contrast).
+  System font stack only (no network font), `tabular-nums` on all figures, button caps disabled.
+- **Stat tiles** (`ui/play.py` `_tile`, markers `tile-balance|points|round`): icon, label, value. The
+  balance tile adds a sparkline (`balance-sparkline`) from `Database.balance_history` (last 20
+  finished rounds, led by the first round's starting balance) through the pure `sparkline.sparkline_path`.
+  It appears from the first finished round on.
+- **Option cards**: buy cards show title, a loss/gain bar at the fixed 1 : 2 CRV (`risk-<option>`),
+  the SL/TP note and the two money figures; the remaining `card_lines` sit in a collapsed
+  `ui.expansion` (`details-<option>`). Buy cards stack in one column from 1024 px.
+- **Resolution grid fix**: tracks are `minmax(0, 64fr) minmax(0, 36fr)` and grid items `min-width: 0`;
+  the old `64% 36%` plus gap overflowed the viewport, and the result table pushed the page wider.
+- Reduced motion disables the card/badge animations.
+
 ## Known limits
 
 - `pre-commit run --all-files` checks only files git tracks. New untracked files are formatted by

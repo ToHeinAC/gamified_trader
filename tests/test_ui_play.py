@@ -117,6 +117,42 @@ async def test_picked_card_gets_selected_marker_class(gt_user: User, tmp_path: P
     assert "gt-selected" not in other_card.classes
 
 
+async def test_stat_tiles_have_markers_and_no_sparkline_before_first_round(
+    gt_user: User, tmp_path: Path
+) -> None:
+    make_game_env(tmp_path, seed=7)
+    await gt_user.open("/")
+
+    for marker in ("tile-balance", "tile-points", "tile-round"):
+        assert len(gt_user.find(marker=marker).elements) == 1
+    await gt_user.should_not_see(marker="balance-sparkline")
+
+
+async def test_sparkline_appears_after_a_finished_round(gt_user: User, tmp_path: Path) -> None:
+    make_game_env(tmp_path, seed=7)
+    await gt_user.open("/")
+    gt_user.find(marker="pick-W10").click()
+    gt_user.find(marker="confirm").click()
+
+    spark = next(iter(gt_user.find(marker="balance-sparkline").elements))
+    assert "<path" in str(getattr(spark, "content", ""))
+
+
+async def test_buy_cards_show_risk_bar_and_collapsed_details(gt_user: User, tmp_path: Path) -> None:
+    make_game_env(tmp_path, seed=7)
+    await gt_user.open("/")
+
+    for option in ("K10", "K30", "K120"):
+        assert len(gt_user.find(marker=f"risk-{option}").elements) == 1
+        details = next(iter(gt_user.find(marker=f"details-{option}").elements))
+        assert isinstance(details, ui.expansion)
+        assert details.value is False
+    for option in ("W10", "W30", "W120"):
+        await gt_user.should_not_see(marker=f"risk-{option}")
+    await gt_user.should_see("Verlust bei SL")
+    await gt_user.should_see("Gewinn bei TP")
+
+
 async def test_resolution_view_uses_desktop_grid_layout(gt_user: User, tmp_path: Path) -> None:
     make_game_env(tmp_path, seed=8)
     await gt_user.open("/")
@@ -136,8 +172,8 @@ async def test_resolution_view_uses_desktop_grid_layout(gt_user: User, tmp_path:
         pane = next(iter(gt_user.find(marker=marker).elements))
         assert area in pane.classes
 
-    await gt_user.should_see("Guthaben:")
-    await gt_user.should_see("Punkte gesamt:")
+    await gt_user.should_see("Guthaben")
+    await gt_user.should_see("Punkte gesamt")
     await gt_user.should_see("Nächste Runde")
     await gt_user.should_see("Optimal:")
 

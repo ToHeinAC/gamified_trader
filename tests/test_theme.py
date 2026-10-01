@@ -31,3 +31,21 @@ def test_page_css_contains_tokens() -> None:
     assert LIGHT.primary in css
     assert DARK.primary in css
     assert "body.body--dark" in css
+
+
+def test_page_css_styles_tiles_option_cards_and_sparkline() -> None:
+    css = page_css()
+    for selector in (".gt-tiles", ".gt-tile-value", ".gt-option", ".gt-risk-bar", ".gt-spark-up"):
+        assert selector in css
+
+
+def test_page_css_uses_tabular_numbers_and_respects_reduced_motion() -> None:
+    css = page_css()
+    assert "tabular-nums" in css
+    assert "prefers-reduced-motion" in css
+
+
+def test_resolution_grid_tracks_can_shrink_so_the_page_does_not_overflow() -> None:
+    css = page_css()
+    assert "minmax(0, 64fr) minmax(0, 36fr)" in css
+    assert ".gt-resolution-grid > * { min-width: 0; }" in css
