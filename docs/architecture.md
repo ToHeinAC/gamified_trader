@@ -192,8 +192,8 @@ used since M2 for the option-card grid) switches the layout, so both the stacked
 the desktop (≥ 1024 px) rules ship in the same `classes(...)` string and the browser's media query
 picks one. `DecisionView._build` wraps the chart and the option/confirm column in a
 `flex flex-col lg:flex-row` div (`decision-chart-pane` ≈64 %, `decision-options-pane` ≈36 %,
-markers used by `tests/test_ui_play.py`); `chart_panel`'s `ui.plotly` grows from `h-[420px]` to
-`lg:h-[720px]`. `SetupView.render` pairs its four cards into two `grid grid-cols-1 lg:grid-cols-2`
+markers used by `tests/test_ui_play.py`); the chart height is now viewport-driven, see
+[One-screen Spielen](#one-screen-spielen-2026-10-06). `SetupView.render` pairs its four cards into two `grid grid-cols-1 lg:grid-cols-2`
 rows (`setup-row-1`/`setup-row-2`). None of this touches `game.py`, `trading.py` or the M6
 round-lifecycle logic — it is CSS classes on existing containers only, verified by asserting the
 rendered elements' classes in the `User` fixture (NiceGUI's test client doesn't evaluate media
@@ -219,11 +219,11 @@ Two small UI follow-ups on M6.1, both CSS-only in `theme.py`'s `page_css()` (spl
   visibly marked before confirming.
 - `ResolutionView` no longer renders as one stacked column; it uses a named-area CSS Grid
   (`.gt-resolution-grid`, areas `tiles`/`chart`/`result`/`next`/`stats`) that is single-column by
-  default and switches to `chart` (left, spanning all rows) + a `tiles → result → next → stats`
-  right column at the same ≥1024 px breakpoint as M6.1 — unlike the flex-based decision layout,
-  grid template areas control visual position independently of DOM order, so the mobile stacking
-  order (tiles, chart, table, next-round button, stats — unchanged from M6) doesn't have to match
-  the desktop visual order. `_tiles`/`_stats_card` moved from `PlayPage` methods to module-level
+  default and switches to `chart` (left, spanning all rows) + a right column at the same ≥1024 px
+  breakpoint as M6.1 (current area order: [One-screen Spielen](#one-screen-spielen-2026-10-06)) —
+  unlike the flex-based decision layout, grid template areas control visual position independently
+  of DOM order, so the mobile stacking order doesn't have to match the desktop visual order.
+  `_tiles`/`_stats_card` (now `_stats_caption`) moved from `PlayPage` methods to module-level
   functions in `play.py` so both `PlayPage` (decision view) and `ResolutionView` can call them
   without pyright's `reportPrivateUsage`. Manual check: headless Chromium confirmed the green frame
   renders and the five grid areas' bounding boxes sit in two real columns at 1440 px, one at 390 px.
@@ -349,12 +349,39 @@ Direction "clean fintech", CSS-first, palette tokens untouched (`theme.py`, pinn
   balance tile adds a sparkline (`balance-sparkline`) from `Database.balance_history` (last 20
   finished rounds, led by the first round's starting balance) through the pure `sparkline.sparkline_path`.
   It appears from the first finished round on.
-- **Option cards**: buy cards show title, a loss/gain bar at the fixed 1 : 2 CRV (`risk-<option>`),
-  the SL/TP note and the two money figures; the remaining `card_lines` sit in a collapsed
-  `ui.expansion` (`details-<option>`). Buy cards stack in one column from 1024 px.
-- **Resolution grid fix**: tracks are `minmax(0, 64fr) minmax(0, 36fr)` and grid items `min-width: 0`;
-  the old `64% 36%` plus gap overflowed the viewport, and the result table pushed the page wider.
+- **Option cards**: superseded by the compact panels in
+  [One-screen Spielen](#one-screen-spielen-2026-10-06).
+- **Resolution grid fix**: tracks are `minmax(0, …fr)` and grid items `min-width: 0`; the old
+  `64% 36%` plus gap overflowed the viewport, and the result table pushed the page wider.
 - Reduced motion disables the card/badge animations.
+
+## One-screen Spielen (2026-10-06)
+
+UI polish, no PRD change. At ≥ 1024 px the decision view and the result view each fit one viewport
+without page scrolling, verified down to 1280×650 (and 1024×650) — so also with a browser sidebar
+open. Below 1024 px the stacked, scrolling layout stays.
+
+- **Viewport fit** (`theme.py` `_fit_css()`): `.gt-fit` sets `height: calc(100dvh - --gt-chrome)`
+  (header, pinned to `padding: 8px 16px`, plus page padding = 88 px). Inside it the chart card and
+  `.gt-plot` take the leftover height (`flex: 1 1 0`); NiceGUI's plotly element resizes via its own
+  ResizeObserver. Outside `.gt-fit` (Entdecken) `.gt-plot` keeps 420/720 px. The right column
+  (`.gt-side`, `.gt-area-result`) has `overflow-y: auto` only as a safety valve, e.g. when several
+  Details are open on a short screen; its children don't flex-shrink.
+- **Decision view**: chart left (64 %); right column (36 %): compact tiles, stats caption
+  (`stats`), level toggle, three buy panels, wait row, confirm. A buy panel's head
+  (`head-<option>`) holds code, horizon, `−loss / +gain` and a small "Wählen" button; below it the
+  1 : 2 risk bar and a collapsed dense "Details" expander with all `card_lines` (SL/TP, stake,
+  fees). The wait options are three small panels in one `gt-wait-row` under one caption.
+- **Result view**: grid tracks `60fr/40fr`, desktop areas `tiles / stats / next / result` beside
+  the chart (mobile: `tiles, stats, next, chart, result`). `next` holds the badge and "Nächste
+  Runde"; the result table is `dense flat` (`result-table`), balance and points share one caption
+  line, and ML-Strategie is a collapsed expander (`ml-strategy`).
+- **Gotcha, again**: Quasar's `.flex` sets `flex-wrap: wrap` on *columns* too — an overflowing
+  `flex-col` wrapped the confirm button into an invisible second column. Every `flex flex-col`
+  pane in `play.py` therefore carries `flex-nowrap` (asserted in `test_ui_play.py`).
+- Manual check: headless Chromium (Playwright) at 1920×950, 1600×950, 1280×650, 1024×650:
+  document height = viewport height, no horizontal overflow, right column without overflow; 390 px
+  stacked. Known gap: at 1024 px the result table scrolls 40 px sideways inside its box.
 
 ## Known limits
 

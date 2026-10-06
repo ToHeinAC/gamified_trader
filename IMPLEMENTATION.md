@@ -47,11 +47,11 @@ Release 1: start with [docs/spec-common.md](docs/spec-common.md), then the miles
 | `src/app/universe.py` | Reads the ticker universe from `resources/universe.csv`. |
 | `src/app/resources/universe.csv` | 668-row ticker universe; built once, see [docs/data.md](docs/data.md). |
 | `src/app/indicators.py` | `with_indicators`: SMA, Bollinger, Wilder RSI/ATR (R1). |
-| `src/app/theme.py` | `LIGHT`/`DARK` design tokens, `page_css()`. |
+| `src/app/theme.py` | `LIGHT`/`DARK` design tokens, `page_css()` (incl. the `.gt-fit` one-screen layout). |
 | `src/app/chart.py` | `decision_window`/`resolution_window` (leak-proof, drop `date`), `discover_window`/`build_discover_figure` (real dates, M8), `build_figure`, `build_resolution_figure` + `exit_marker`, `add_preview`, presets (R2), chart color constants. |
 | `src/app/ui/root.py` | App shell: header, theme resolution, routing (`root()`, `run_app()`); links Spielen/Entdecken/Setup. |
-| `src/app/ui/chart_panel.py` | `ui.plotly` panel from a figure factory; optional preset buttons. |
-| `src/app/ui/play.py` | Page "Spielen": `PlayPage`/`DecisionView`/`ResolutionView` (incl. ML-Strategie top-3 card), stat tiles with sparkline, option cards with risk bar, the full round loop. |
+| `src/app/ui/chart_panel.py` | `ui.plotly` panel from a figure factory; optional preset buttons; height via `.gt-plot`. |
+| `src/app/ui/play.py` | Page "Spielen": `PlayPage`/`DecisionView`/`ResolutionView` (incl. collapsed ML-Strategie top-3), stat tiles with sparkline, compact option panels with risk bar and Details, the full round loop. |
 | `src/app/trading.py` | `make_card(s)`, `simulate(_all)`, `option_values`/`points`/`label`/`book`: R3–R9, pure Decimal math. |
 | `src/app/signals.py` | `signal_flags`: 9 technical event flags per bar (R11). |
 | `src/app/eligibility.py` | `eligible_mask`: R10 candidate mask per bar. |
@@ -245,3 +245,7 @@ Release 1: start with [docs/spec-common.md](docs/spec-common.md), then the miles
   unchanged (pinned by `test_theme.py`). Verified by headless Chromium (light/dark, 1440/390 px).
   The Quasar primary colour on buttons still renders as NiceGUI's default blue, not the PRD
   `primary` token (pre-existing; not addressed).
+- One-screen Spielen (2026-10-06): UI polish, no PRD change; decision and result view each fit one
+  viewport at ≥ 1024 px (verified down to 1280×650 by headless Chromium), compact option panels with
+  collapsed Details. Details:
+  [docs/architecture.md](docs/architecture.md#one-screen-spielen-2026-10-06).

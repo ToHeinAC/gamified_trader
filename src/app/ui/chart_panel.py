@@ -26,12 +26,15 @@ def chart_panel(
             apply_preset(fig, window, state["preset"])
         return fig
 
-    with ui.card().classes("gt-card"):
+    with ui.card().classes("gt-card gt-chart-card"):
         if presets:
-            with ui.row():
+            with ui.row().classes("gap-2"):
                 for name in PRESETS:
-                    ui.button(name, on_click=lambda _e, n=name: _select_preset(n))
-        plot = ui.plotly(_figure()).classes("w-full h-[420px] lg:h-[720px]")
+                    ui.button(name, on_click=lambda _e, n=name: _select_preset(n)).props(
+                        "dense size=sm"
+                    ).classes("px-2")
+        # Height comes from `.gt-plot` (theme.py): fixed, or filling a `.gt-fit` page on desktop.
+        plot = ui.plotly(_figure()).classes("w-full gt-plot")
 
     # ui.plotly.update_figure's signature references plotly's unstubbed Figure type, which
     # nicegui itself doesn't re-stub; same NiceGUI/plotly stub gap as ui/root.py's ui.run.

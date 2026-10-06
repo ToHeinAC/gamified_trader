@@ -32,6 +32,18 @@ def _rendered_text(user: User) -> str:
     return "\n".join(parts)
 
 
+def _one(user: User, marker: str) -> ui.element:
+    return next(iter(user.find(marker=marker).elements))
+
+
+def _ancestors(el: ui.element) -> list[ui.element]:
+    return list(el.ancestors())
+
+
+def _texts(el: ui.element) -> str:
+    return " ".join(str(getattr(d, "text", "")) for d in [el, *el.descendants()])
+
+
 @pytest.fixture
 async def gt_user(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[User]:
     monkeypatch.setenv("GT_DATA_DIR", str(tmp_path))
@@ -76,28 +88,33 @@ async def test_reveal_after_confirmation(
     await gt_user.should_see(date_de(rnd.t0))
 
 
-async def test_decision_layout_has_desktop_breakpoint_classes(
-    gt_user: User, tmp_path: Path
-) -> None:
+async def test_decision_layout_fits_one_viewport(gt_user: User, tmp_path: Path) -> None:
     make_game_env(tmp_path, seed=4)
     await gt_user.open("/")
 
-    layout = next(iter(gt_user.find(marker="decision-layout").elements))
+    layout = _one(gt_user, "decision-layout")
+    assert "gt-fit" in layout.classes
     assert "flex-col" in layout.classes
     assert "lg:flex-row" in layout.classes
     # Quasar's own `.flex` utility sets `flex-wrap: wrap`, which collides with Tailwind's
     # `.flex` (no wrap) and would stack the panes even at lg: width; force nowrap explicitly.
     assert "lg:flex-nowrap" in layout.classes
 
-    chart_pane = next(iter(gt_user.find(marker="decision-chart-pane").elements))
+    chart_pane = _one(gt_user, "decision-chart-pane")
     assert "lg:w-[64%]" in chart_pane.classes
-
-    options_pane = next(iter(gt_user.find(marker="decision-options-pane").elements))
+    options_pane = _one(gt_user, "decision-options-pane")
     assert "lg:w-[36%]" in options_pane.classes
+    # Same Quasar `.flex` wrap gotcha for the columns: a wrapping column pushes overflowing
+    # children (e.g. the confirm button) into an invisible second column instead of below.
+    assert "flex-nowrap" in chart_pane.classes
+    assert "flex-nowrap" in options_pane.classes
+    for marker in ("tile-balance", "stats", "level", "confirm"):
+        assert options_pane in _ancestors(_one(gt_user, marker))
 
     plot = next(iter(gt_user.find(kind=ui.plotly).elements))
-    assert "h-[420px]" in plot.classes
-    assert "lg:h-[720px]" in plot.classes
+    assert chart_pane in _ancestors(plot)
+    assert "gt-plot" in plot.classes
+    assert "lg:h-[720px]" not in plot.classes
 
 
 async def test_picked_card_gets_selected_marker_class(gt_user: User, tmp_path: Path) -> None:
@@ -106,15 +123,11 @@ async def test_picked_card_gets_selected_marker_class(gt_user: User, tmp_path: P
 
     gt_user.find(marker="pick-W10").click()
 
-    picked_btn = next(iter(gt_user.find(marker="pick-W10").elements))
-    card = picked_btn.parent_slot.parent if picked_btn.parent_slot else None
-    assert card is not None
-    assert "gt-selected" in card.classes
+    def card_of(marker: str) -> ui.element:
+        return next(a for a in _ancestors(_one(gt_user, marker)) if "gt-option" in a.classes)
 
-    other_btn = next(iter(gt_user.find(marker="pick-K10").elements))
-    other_card = other_btn.parent_slot.parent if other_btn.parent_slot else None
-    assert other_card is not None
-    assert "gt-selected" not in other_card.classes
+    assert "gt-selected" in card_of("pick-W10").classes
+    assert "gt-selected" not in card_of("pick-K10").classes
 
 
 async def test_stat_tiles_have_markers_and_no_sparkline_before_first_round(
@@ -138,19 +151,34 @@ async def test_sparkline_appears_after_a_finished_round(gt_user: User, tmp_path:
     assert "<path" in str(getattr(spark, "content", ""))
 
 
-async def test_buy_cards_show_risk_bar_and_collapsed_details(gt_user: User, tmp_path: Path) -> None:
+async def test_buy_cards_are_compact_with_collapsed_details(gt_user: User, tmp_path: Path) -> None:
     make_game_env(tmp_path, seed=7)
     await gt_user.open("/")
 
     for option in ("K10", "K30", "K120"):
         assert len(gt_user.find(marker=f"risk-{option}").elements) == 1
-        details = next(iter(gt_user.find(marker=f"details-{option}").elements))
+        details = _one(gt_user, f"details-{option}")
         assert isinstance(details, ui.expansion)
         assert details.value is False
+        head = _one(gt_user, f"head-{option}")
+        assert re.search(r"\u2212[\d.]+,\d\d € / \+[\d.]+,\d\d €", _texts(head))
+        assert "CRV 1 : 2" not in _texts(head)
+        assert "CRV 1 : 2" in _texts(details)
+        assert head in _ancestors(_one(gt_user, f"pick-{option}"))
     for option in ("W10", "W30", "W120"):
         await gt_user.should_not_see(marker=f"risk-{option}")
-    await gt_user.should_see("Verlust bei SL")
-    await gt_user.should_see("Gewinn bei TP")
+
+
+async def test_wait_options_share_one_row(gt_user: User, tmp_path: Path) -> None:
+    make_game_env(tmp_path, seed=7)
+    await gt_user.open("/")
+
+    rows = [
+        next(a for a in _ancestors(_one(gt_user, f"pick-{o}")) if "gt-wait-row" in a.classes)
+        for o in ("W10", "W30", "W120")
+    ]
+    assert rows[0] is rows[1] is rows[2]
+    assert _texts(_one(gt_user, "decision-options-pane")).count("Kein Einsatz, keine Kosten") == 1
 
 
 async def test_resolution_view_uses_desktop_grid_layout(gt_user: User, tmp_path: Path) -> None:
@@ -159,8 +187,14 @@ async def test_resolution_view_uses_desktop_grid_layout(gt_user: User, tmp_path:
     gt_user.find(marker="pick-W10").click()
     gt_user.find(marker="confirm").click()
 
-    layout = next(iter(gt_user.find(marker="resolution-layout").elements))
+    layout = _one(gt_user, "resolution-layout")
     assert "gt-resolution-grid" in layout.classes
+    assert "gt-fit" in layout.classes
+    next_pane = _one(gt_user, "resolution-next-pane")
+    assert next_pane in _ancestors(_one(gt_user, "result-badge"))
+    assert "Nächste Runde" in _texts(next_pane)
+    table = _one(gt_user, "result-table")
+    assert "dense" in table.props
 
     for marker, area in (
         ("resolution-tiles-pane", "gt-area-tiles"),
@@ -171,6 +205,8 @@ async def test_resolution_view_uses_desktop_grid_layout(gt_user: User, tmp_path:
     ):
         pane = next(iter(gt_user.find(marker=marker).elements))
         assert area in pane.classes
+    for marker in ("resolution-chart-pane", "resolution-result-pane"):
+        assert "flex-nowrap" in _one(gt_user, marker).classes
 
     await gt_user.should_see("Guthaben")
     await gt_user.should_see("Punkte gesamt")
@@ -227,6 +263,9 @@ async def test_resolution_shows_ml_top3(
     gt_user.find(marker="confirm").click()
 
     await gt_user.should_see("ML-Strategie")
+    card = _one(gt_user, "ml-strategy")
+    assert isinstance(card, ui.expansion)
+    assert card.value is False
     table = next(iter(gt_user.find(marker="ml-strategy-table").elements))
     assert isinstance(table, ui.table)
     rows = table.rows

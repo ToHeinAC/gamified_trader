@@ -1,3 +1,5 @@
+import re
+
 from app.theme import DARK, LIGHT, page_css, theme_for
 
 
@@ -47,5 +49,11 @@ def test_page_css_uses_tabular_numbers_and_respects_reduced_motion() -> None:
 
 def test_resolution_grid_tracks_can_shrink_so_the_page_does_not_overflow() -> None:
     css = page_css()
-    assert "minmax(0, 64fr) minmax(0, 36fr)" in css
+    assert "minmax(0, 60fr) minmax(0, 40fr)" in css
     assert ".gt-resolution-grid > * { min-width: 0; }" in css
+
+
+def test_page_css_fits_the_spielen_views_into_one_viewport_on_desktop() -> None:
+    css = page_css()
+    assert re.search(r"@media \(min-width: 1024px\) \{[^@]*\.gt-fit \{[^}]*100dvh", css)
+    assert ".gt-fit .gt-plot" in css

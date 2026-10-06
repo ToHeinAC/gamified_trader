@@ -126,8 +126,12 @@ async def test_ok_path_shows_recommendation_and_chart(
     await gt_user.should_see(marker="top-features")
     plots = gt_user.find(kind=ui.plotly).elements
     assert len(plots) == 1
-    figure_json = str(next(iter(plots)).props["options"])
+    plot = next(iter(plots))
+    figure_json = str(plot.props["options"])
     assert "AAPL" in figure_json
+    # Entdecken keeps the fixed chart height; only Spielen fills the viewport (`gt-fit`).
+    assert "gt-plot" in plot.classes
+    assert not any("gt-fit" in el.classes for el in plot.ancestors())
 
 
 async def test_not_equity_shows_hint(gt_user: User, monkeypatch: pytest.MonkeyPatch) -> None:
